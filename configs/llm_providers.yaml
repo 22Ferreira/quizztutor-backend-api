@@ -1,0 +1,204 @@
+# ============================================================
+# CONFIGURAÇÃO DE PROVEDORES DE LLM
+# Arquivo de configuração YAML — edite sem tocar no código
+#
+# O sistema tentará os provedores na ordem listada em "fallback_order"
+# até um funcionar. Isso garante disponibilidade mesmo se um falhar.
+#
+# Provedores GRATUITOS disponíveis hoje (2025):
+#   - groq          (https://console.groq.com)     — gratuito, muito rápido
+#   - google_gemini (https://aistudio.google.com)  — gratuito com limites generosos
+#   - huggingface   (https://huggingface.co)       — gratuito (Inference API)
+#   - ollama        (http://localhost:11434)        — gratuito, roda local
+#   - openrouter    (https://openrouter.ai)         — tem modelos gratuitos
+#   - cohere        (https://cohere.com)            — trial gratuito
+#
+# Para usar um provedor, defina ENABLED=true e configure a API key
+# ============================================================
+
+version: "1.0"
+
+# Ordem de fallback: o sistema tenta nesta ordem
+fallback_order:
+  - groq
+  - google_gemini
+  - openrouter
+  - huggingface
+  - ollama
+  - cohere
+
+# Configurações por provedor
+providers:
+
+  # ----------------------------------------------------------
+  # GROQ — Melhor opção gratuita: muito rápido, bons modelos
+  # Cadastro: https://console.groq.com
+  # Free tier: 14.400 req/dia, 500 req/min
+  # ----------------------------------------------------------
+  groq:
+    enabled: true                    # Altere para false para desabilitar
+    name: "Groq (Free)"
+    base_url: "https://api.groq.com/openai/v1"
+    api_key_env: "GROQ_API_KEY"     # Nome da variável de ambiente com a chave
+    models:
+      default: "llama-3.1-8b-instant"
+      alternatives:
+        - "llama-3.1-70b-versatile"  # Mais capaz mas mais lento
+        - "mixtral-8x7b-32768"       # Bom para raciocínio
+        - "gemma2-9b-it"             # Google Gemma via Groq
+    parameters:
+      temperature: 0.3
+      max_tokens: 1024
+      top_p: 0.9
+    timeout_seconds: 30
+    rate_limit:
+      requests_per_minute: 30        # Limite conservador
+      requests_per_day: 14000
+    openai_compatible: true          # Usa a mesma interface da OpenAI
+
+  # ----------------------------------------------------------
+  # GOOGLE GEMINI — Generoso no free tier
+  # Cadastro: https://aistudio.google.com
+  # Free tier: 15 req/min, 1M tokens/dia
+  # ----------------------------------------------------------
+  google_gemini:
+    enabled: true
+    name: "Google Gemini (Free)"
+    base_url: "https://generativelanguage.googleapis.com"
+    api_key_env: "GEMINI_API_KEY"
+    models:
+      default: "gemini-1.5-flash"    # Mais rápido e free
+      alternatives:
+        - "gemini-1.5-pro"           # Mais capaz (free com limites)
+        - "gemini-2.0-flash-exp"     # Experimental mais novo
+    parameters:
+      temperature: 0.3
+      max_tokens: 1024
+    timeout_seconds: 45
+    rate_limit:
+      requests_per_minute: 14
+    openai_compatible: false         # Usa API própria do Gemini
+
+  # ----------------------------------------------------------
+  # OPENROUTER — Agrega vários modelos, muitos gratuitos
+  # Cadastro: https://openrouter.ai
+  # Free tier: Vários modelos com :free no nome
+  # ----------------------------------------------------------
+  openrouter:
+    enabled: true
+    name: "OpenRouter (Free Models)"
+    base_url: "https://openrouter.ai/api/v1"
+    api_key_env: "OPENROUTER_API_KEY"
+    models:
+      default: "meta-llama/llama-3.1-8b-instruct:free"
+      alternatives:
+        - "google/gemma-2-9b-it:free"
+        - "mistralai/mistral-7b-instruct:free"
+        - "microsoft/phi-3-mini-128k-instruct:free"
+        - "qwen/qwen-2-7b-instruct:free"
+    parameters:
+      temperature: 0.3
+      max_tokens: 1024
+    timeout_seconds: 60
+    rate_limit:
+      requests_per_minute: 20
+    openai_compatible: true
+    headers_extra:
+      HTTP-Referer: "http://localhost:8000"
+      X-Title: "Tutor Plataforma"
+
+  # ----------------------------------------------------------
+  # HUGGING FACE — Inference API gratuita
+  # Cadastro: https://huggingface.co
+  # Free tier: limitado mas funciona para desenvolvimento
+  # ----------------------------------------------------------
+  huggingface:
+    enabled: false                   # Desabilitado por padrão (mais lento)
+    name: "Hugging Face (Free)"
+    base_url: "https://api-inference.huggingface.co"
+    api_key_env: "HF_TOKEN"
+    models:
+      default: "microsoft/DialoGPT-large"
+      alternatives:
+        - "mistralai/Mistral-7B-Instruct-v0.1"
+        - "meta-llama/Meta-Llama-3-8B-Instruct"
+    parameters:
+      temperature: 0.3
+      max_new_tokens: 512
+    timeout_seconds: 60
+    rate_limit:
+      requests_per_minute: 10
+    openai_compatible: false
+
+  # ----------------------------------------------------------
+  # OLLAMA — LLM local, totalmente gratuito e offline
+  # Instalação: https://ollama.com
+  # Modelos: ollama pull llama3.1
+  # ----------------------------------------------------------
+  ollama:
+    enabled: true
+    name: "Ollama (Local)"
+    base_url_env: "OLLAMA_BASE_URL"  # Default: http://localhost:11434
+    base_url_default: "http://localhost:11434"
+    api_key_env: null                # Sem chave
+    models:
+      default: "llama3.1"
+      alternatives:
+        - "mistral"
+        - "gemma2"
+        - "phi3"
+        - "qwen2"
+    parameters:
+      temperature: 0.3
+      max_tokens: 1024
+    timeout_seconds: 120             # Local pode ser mais lento
+    rate_limit:
+      requests_per_minute: 60        # Local sem limite real
+    openai_compatible: true          # Ollama tem endpoint /v1/chat/completions
+
+  # ----------------------------------------------------------
+  # COHERE — Trial gratuito
+  # Cadastro: https://cohere.com
+  # Free tier: 5 req/min no trial
+  # ----------------------------------------------------------
+  cohere:
+    enabled: false
+    name: "Cohere (Trial)"
+    base_url: "https://api.cohere.com/v1"
+    api_key_env: "COHERE_API_KEY"
+    models:
+      default: "command-r"
+      alternatives:
+        - "command-light"
+    parameters:
+      temperature: 0.3
+      max_tokens: 1024
+    timeout_seconds: 45
+    rate_limit:
+      requests_per_minute: 5
+    openai_compatible: false
+
+# ----------------------------------------------------------
+# Configurações globais do sistema de LLM
+# ----------------------------------------------------------
+global:
+  # Tentar próximo provedor em caso de erro?
+  auto_fallback: true
+
+  # Número de retentativas por provedor antes de ir pro próximo
+  retries_per_provider: 2
+
+  # Tempo de espera entre retentativas (segundos)
+  retry_wait_seconds: 1.0
+
+  # Cache de respostas? (evita chamadas repetidas)
+  cache_enabled: false
+  cache_ttl_seconds: 300
+
+  # Log de todas as chamadas ao LLM
+  log_all_calls: true
+
+  # Mensagem padrão quando todos os provedores falham
+  fallback_message: >
+    Desculpe, o assistente de IA está temporariamente indisponível.
+    Por favor, consulte o material de apoio ou tente novamente em instantes.

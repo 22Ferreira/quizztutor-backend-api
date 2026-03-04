@@ -1,0 +1,192 @@
+# ============================================================
+# ÁRVORE DE DECISÃO DO TUTOR
+# Arquivo de configuração YAML — edite sem tocar no código
+#
+# Como funciona:
+#   1. O sistema avalia as condições de cada nó em ordem
+#   2. Se a condição bate, segue o ramo "then"
+#   3. Se não bate, segue o ramo "else"
+#   4. Nós do tipo "action" executam a ação e encerram
+#
+# Variáveis disponíveis no contexto:
+#   - tentativas_usadas      (int)  quantas tentativas o aluno usou
+#   - max_tentativas         (int)  máximo permitido
+#   - dicas_usadas           (int)  nível de dica atual (0-3)
+#   - max_dicas              (int)  máximo de níveis de dica
+#   - acertou                (bool) se a última resposta foi certa
+#   - modo_questionario      (str)  ESTUDO | DIAGNOSTICO | AVALIACAO
+#   - escopo_tutor           (str)  SOMENTE_QUESTAO_ATUAL | QUESTIONARIO | TURMA | LIVRE
+#   - fora_escopo            (bool) se a pergunta do aluno foi detectada fora do escopo
+#   - tem_explicacao         (bool) se a questão tem explicação cadastrada
+#   - nivel_dificuldade      (str)  FACIL | MEDIA | DIFICIL
+#   - interacoes_tutor_total (int)  total de interações com tutor nesta tentativa
+# ============================================================
+
+version: "1.0"
+
+# Árvore principal: chamada quando o aluno pede ajuda
+tutor_decision_tree:
+
+  - id: check_fora_escopo
+    type: condition
+    description: "Verificar se a pergunta é fora do escopo permitido"
+    condition:
+      field: fora_escopo
+      operator: eq
+      value: true
+    then:
+      - id: bloquear_fora_escopo
+        type: action
+        action: BLOCK_OUT_OF_SCOPE
+        message_template: >
+          Sua pergunta está fora do escopo deste questionário.
+          Por favor, faça perguntas relacionadas ao conteúdo da questão atual.
+        log_interaction: true
+        log_kind: ALERTA_FUGA_ASSUNTO
+    else:
+      - id: check_modo_avaliacao
+        type: condition
+        description: "Modo avaliação tem restrições de tutor"
+        condition:
+          field: modo_questionario
+          operator: eq
+          value: AVALIACAO
+        then:
+          - id: avaliacao_sem_resposta
+            type: action
+            action: SEND_RESTRICTED_HELP
+            message_template: >
+              Durante uma avaliação, posso apenas confirmar que entendi sua dúvida,
+              mas não posso revelar dicas ou explicações. Tente raciocinar com calma.
+            log_interaction: true
+            log_kind: RESPOSTA_TUTOR
+        else:
+          - id: check_acertou
+            type: condition
+            description: "Se o aluno acertou, oferecer reforço"
+            condition:
+              field: acertou
+              operator: eq
+              value: true
+            then:
+              - id: reforco_positivo
+                type: action
+                action: SEND_POSITIVE_REINFORCEMENT
+                message_template: >
+                  Muito bem! Você acertou. {explicacao_questao}
+                log_interaction: true
+                log_kind: EXPLICACAO
+            else:
+              - id: check_tentativas_esgotadas
+                type: condition
+                description: "Tentativas esgotadas: liberar explicação completa"
+                condition:
+                  field: tentativas_usadas
+                  operator: gte
+                  value_from_field: max_tentativas
+                then:
+                  - id: liberar_explicacao_completa
+                    type: action
+                    action: SEND_FULL_EXPLANATION
+                    message_template: >
+                      Você usou todas as tentativas. Aqui está a explicação completa:
+                      {explicacao_questao}
+                    log_interaction: true
+                    log_kind: EXPLICACAO
+                else:
+                  - id: check_dicas_disponiveis
+                    type: condition
+                    description: "Há dicas disponíveis para oferecer?"
+                    condition:
+                      field: dicas_usadas
+                      operator: lt
+                      value_from_field: max_dicas
+                    then:
+                      - id: oferecer_dica
+                        type: action
+                        action: OFFER_HINT
+                        hint_level_next: true
+                        message_template: >
+                          Vou te ajudar com uma dica (nível {proximo_nivel_dica}):
+                          {texto_dica}
+                        log_interaction: true
+                        log_kind: DICA
+                    else:
+                      - id: check_tem_explicacao
+                        type: condition
+                        description: "Tem explicação cadastrada para esta questão?"
+                        condition:
+                          field: tem_explicacao
+                          operator: eq
+                          value: true
+                        then:
+                          - id: enviar_para_llm_com_contexto
+                            type: action
+                            action: SEND_TO_LLM
+                            include_explanation: true
+                            message_template: null
+                            system_hint: >
+                              Use a explicação da questão como base para formular
+                              uma resposta socrática. Não revele a resposta diretamente.
+                            log_interaction: true
+                            log_kind: RESPOSTA_TUTOR
+                        else:
+                          - id: enviar_para_llm_livre
+                            type: action
+                            action: SEND_TO_LLM
+                            include_explanation: false
+                            message_template: null
+                            log_interaction: true
+                            log_kind: RESPOSTA_TUTOR
+
+# Árvore para avaliação de resposta (pós-resposta)
+feedback_decision_tree:
+
+  - id: check_modo_feedback
+    type: condition
+    description: "Verificar modo para determinar tipo de feedback"
+    condition:
+      field: modo_questionario
+      operator: in
+      value: [ESTUDO, DIAGNOSTICO]
+    then:
+      - id: check_acertou_feedback
+        type: condition
+        condition:
+          field: acertou
+          operator: eq
+          value: true
+        then:
+          - id: feedback_correto
+            type: action
+            action: FEEDBACK_CORRECT
+            show_explanation: true
+            message_template: "✅ Correto! {explicacao_questao}"
+        else:
+          - id: check_ultima_tentativa_feedback
+            type: condition
+            condition:
+              field: tentativas_usadas
+              operator: gte
+              value_from_field: max_tentativas
+            then:
+              - id: feedback_errado_final
+                type: action
+                action: FEEDBACK_WRONG_FINAL
+                show_explanation: true
+                show_correct_answer: true
+                message_template: "❌ Errado. {explicacao_questao}"
+            else:
+              - id: feedback_errado_tentar_novamente
+                type: action
+                action: FEEDBACK_WRONG_RETRY
+                show_explanation: false
+                show_correct_answer: false
+                message_template: "❌ Não foi dessa vez. Tente novamente!"
+    else:
+      - id: feedback_avaliacao
+        type: action
+        action: FEEDBACK_EVALUATION_MODE
+        show_explanation: false
+        show_correct_answer: false
+        message_template: "Resposta registrada."

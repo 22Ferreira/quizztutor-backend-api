@@ -100,6 +100,72 @@ _SYSTEM_CONFIG: dict[str, Any] = {
 # STATS — Dashboard KPIs
 # ──────────────────────────────────────────────────────────────────────────────
 
+_MONTH_ABBR_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
+_WEEKDAY_ABBR_PT = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
+
+
+def _add_months(dt: datetime, months: int) -> datetime:
+    total = dt.month - 1 + months
+    year = dt.year + total // 12
+    month = total % 12 + 1
+    return dt.replace(year=year, month=month, day=1, hour=0, minute=0, second=0, microsecond=0)
+
+
+async def _series_by_month(db: AsyncSession, date_col, months: int = 6) -> list[dict]:
+    now = datetime.now(timezone.utc)
+    start = _add_months(now.replace(day=1), -(months - 1))
+    period = func.date_trunc("month", date_col)
+    rows = (await db.execute(
+        select(period.label("period"), func.count().label("cnt"))
+        .where(date_col >= start)
+        .group_by(period)
+    )).all()
+    counts = {r.period.replace(tzinfo=None).date(): r.cnt for r in rows}
+    out = []
+    cursor = start
+    for _ in range(months):
+        out.append({"label": _MONTH_ABBR_PT[cursor.month - 1], "value": counts.get(cursor.date(), 0)})
+        cursor = _add_months(cursor, 1)
+    return out
+
+
+async def _series_by_day(db: AsyncSession, date_col, filters: list = None, days: int = 7) -> list[dict]:
+    now = datetime.now(timezone.utc)
+    start = (now - timedelta(days=days - 1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    period = func.date_trunc("day", date_col)
+    stmt = select(period.label("period"), func.count().label("cnt")).where(date_col >= start)
+    for f in (filters or []):
+        stmt = stmt.where(f)
+    rows = (await db.execute(stmt.group_by(period))).all()
+    counts = {r.period.replace(tzinfo=None).date(): r.cnt for r in rows}
+    out = []
+    cursor = start
+    for _ in range(days):
+        out.append({"label": _WEEKDAY_ABBR_PT[cursor.weekday()], "value": counts.get(cursor.date(), 0)})
+        cursor += timedelta(days=1)
+    return out
+
+
+async def _series_by_week(db: AsyncSession, date_col, weeks: int = 6) -> list[dict]:
+    now = datetime.now(timezone.utc)
+    start = (now - timedelta(weeks=weeks - 1))
+    period = func.date_trunc("week", date_col)
+    rows = (await db.execute(
+        select(period.label("period"), func.count().label("cnt"))
+        .where(date_col >= func.date_trunc("week", start))
+        .group_by(period)
+    )).all()
+    counts = {r.period.replace(tzinfo=None).date(): r.cnt for r in rows}
+    week_start = func.date_trunc("week", start)
+    cursor_dt = start - timedelta(days=start.weekday())  # Monday of the starting week
+    cursor_dt = cursor_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+    out = []
+    for i in range(weeks):
+        out.append({"label": f"S{i + 1}", "value": counts.get(cursor_dt.date(), 0)})
+        cursor_dt += timedelta(weeks=1)
+    return out
+
+
 @router.get("/stats")
 async def platform_stats(db: AsyncSession = Depends(get_db)):
     total_users    = (await db.execute(select(func.count(User.id)))).scalar() or 0
@@ -113,6 +179,11 @@ async def platform_stats(db: AsyncSession = Depends(get_db)):
         select(func.count(LiveSession.id)).where(LiveSession.status.in_([LiveSessionStatus.LOBBY, LiveSessionStatus.RUNNING]))
     )).scalar() or 0
 
+    user_growth      = await _series_by_month(db, User.created_at, months=6)
+    attempts_by_day  = await _series_by_day(db, Attempt.submitted_at, filters=[Attempt.status == AttemptStatus.SUBMITTED], days=7)
+    quizzes_by_week  = await _series_by_week(db, Quiz.created_at, weeks=6)
+    tutor_by_day     = await _series_by_day(db, TutorInteraction.created_at, days=7)
+
     return {
         "total_users": total_users,
         "total_professors": total_profs,
@@ -121,7 +192,12 @@ async def platform_stats(db: AsyncSession = Depends(get_db)):
         "published_quizzes": pub_quizzes,
         "total_attempts": total_attempts,
         "tutor_interactions": tutor_count,
-        "live_sessions_active": live_active,}
+        "live_sessions_active": live_active,
+        "user_growth": user_growth,
+        "attempts_by_day": attempts_by_day,
+        "quizzes_by_week": quizzes_by_week,
+        "tutor_by_day": tutor_by_day,
+    }
 
 # ──────────────────────────────────────────────────────────────────────────────
 # USERS

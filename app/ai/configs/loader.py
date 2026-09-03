@@ -13,13 +13,9 @@ import yaml
 logger = logging.getLogger(__name__)
 
 # Diretório de configs: pode ser sobrescrito via variável de ambiente
-_CONFIGS_DIR = Path(
-    os.environ.get("AI_CONFIGS_DIR", str(Path(__file__).parent.parent.parent.parent.parent / "configs"))
-)
+_CONFIGS_DIR = Path(os.environ.get("AI_CONFIGS_DIR", str(Path(__file__).parent.parent.parent.parent.parent / "configs")))
 
 _cache: dict[str, Any] = {}
-
-
 def _configs_dir() -> Path:
     return _CONFIGS_DIR
 

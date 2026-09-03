@@ -3,7 +3,6 @@ admin.py — Área administrativa completa
 Todos os endpoints são protegidos por require_roles("ADMIN").
 """
 from __future__ import annotations
-
 import io, csv, secrets, string
 from datetime import datetime, timezone, timedelta
 from typing import Any
@@ -31,8 +30,7 @@ from app.services.audit import audit
 router = APIRouter(
     prefix="/admin",
     tags=["admin"],
-    dependencies=[Depends(require_roles("ADMIN"))],
-)
+    dependencies=[Depends(require_roles("ADMIN"))],)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Schemas
@@ -96,8 +94,7 @@ _SYSTEM_CONFIG: dict[str, Any] = {
     "chat_enabled": True,
     "max_tutor_requests_per_day": 50,
     "allow_self_register": True,
-    "require_email_verify": False,
-}
+    "require_email_verify": False,}
 
 # ──────────────────────────────────────────────────────────────────────────────
 # STATS — Dashboard KPIs
@@ -124,8 +121,7 @@ async def platform_stats(db: AsyncSession = Depends(get_db)):
         "published_quizzes": pub_quizzes,
         "total_attempts": total_attempts,
         "tutor_interactions": tutor_count,
-        "live_sessions_active": live_active,
-    }
+        "live_sessions_active": live_active,}
 
 # ──────────────────────────────────────────────────────────────────────────────
 # USERS

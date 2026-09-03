@@ -79,7 +79,6 @@ Index("ix_quizzes_prof_status", Quiz.professor_id, Quiz.status)
 
 class QuizQuestion(Base):
     __tablename__ = "quiz_questions"
-
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     quiz_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("quizzes.id", ondelete="CASCADE"), index=True)
     order: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -101,7 +100,6 @@ class QuizQuestion(Base):
     media_type: Mapped[str] = mapped_column(String(16), nullable=True)   # IMAGE | AUDIO | VIDEO
     media_url: Mapped[str] = mapped_column(Text, nullable=True)
     attachment_urls: Mapped[list] = mapped_column(JSON, nullable=True)   # lista de URLs de PDF
-
     quiz = relationship("Quiz", back_populates="questions", lazy="selectin")
     options = relationship("QuizOption", back_populates="question", cascade="all, delete-orphan", lazy="selectin")
 

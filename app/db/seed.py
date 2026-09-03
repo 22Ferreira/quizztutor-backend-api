@@ -15,12 +15,10 @@ from app.models.quiz import (
     TutorConfig,
     TutorScope,
     QuizQuestion,
-    QuizOption,
-)
+    QuizOption,)
+
 from app.models.global_quiz import GlobalQuizRequest, GlobalQuizRequestStatus
-
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 
 def _slugify(title: str) -> str:
     s = re.sub(r"[^a-zA-Z0-9]+", "-", (title or "").strip().lower()).strip("-")
@@ -46,8 +44,8 @@ async def seed_mock_data():
                 password_hash=pwd_context.hash("12345678"),
                 role=UserRole.ADMIN,
                 active=True,
-                must_change_password=False,
-            )
+                must_change_password=False,)
+            
             session.add(admin)
             await session.flush()  # pega id sem commit
 
@@ -89,24 +87,20 @@ async def seed_mock_data():
         quizzes_prof = [
             ("Quiz 01 — Fundamentos", "Concorrência vs paralelismo; speedup; Amdahl."),
             ("Quiz 02 — Threads e Sincronização", "Mutex, semáforos, deadlock, starvation."),
-            ("Quiz 03 — OpenMP", "Diretivas, schedule, reduction, critical."),
-        ]
+            ("Quiz 03 — OpenMP", "Diretivas, schedule, reduction, critical."),]
 
         for title, desc in quizzes_prof:
-            q = await session.scalar(
-                select(Quiz).where(Quiz.professor_id == professor.id, Quiz.title == title)
-            )
-
+            q = await session.scalar(select(Quiz).where(Quiz.professor_id == professor.id, Quiz.title == title))
             if not q:
                 q = Quiz(
-                                        share_code=secrets.token_hex(4).upper(),
+                    share_code=secrets.token_hex(4).upper(),
                     professor_id=professor.id,
                     title=title,
                     description=desc,
                     status=QuizStatus.PUBLISHED,
                     tutor_active=True,
-                    chat_active=True,
-                )
+                    chat_active=True,)
+                
                 session.add(q)
                 await session.flush()
             else:
@@ -122,8 +116,8 @@ async def seed_mock_data():
                     scope=TutorScope.SOMENTE_QUESTAO_ATUAL,
                     allow_out_of_scope=False,
                     allow_explanation=True,
-                    allow_hints=True,
-                )
+                    allow_hints=True,)
+                
                 session.add(tc)
 
             req = await session.scalar(select(GlobalQuizRequest).where(GlobalQuizRequest.quiz_id == q.id))
@@ -136,8 +130,7 @@ async def seed_mock_data():
                     approved_public_slug=_make_slug(q.title),
                     reviewed_by=admin.id,
                     reviewed_at=datetime.now(timezone.utc),
-                    review_note="Seed: aprovado automaticamente",
-                )
+                    review_note="Seed: aprovado automaticamente",)
                 session.add(req)
             else:
                 req.status = GlobalQuizRequestStatus.APPROVED
@@ -157,24 +150,16 @@ async def seed_mock_data():
                     explanation="Concorrência lida com múltiplas tarefas; paralelismo executa simultaneamente.",
                     difficulty="MEDIA",
                     points=1,
-                    topic="Fundamentos",
-                )
+                    topic="Fundamentos",)
+                
                 session.add(q1)
                 await session.flush()
 
-                session.add_all(
-                    [
+                session.add_all([
                         QuizOption(question_id=q1.id, order=1, text="São a mesma coisa", is_correct=False),
-                        QuizOption(
-                            question_id=q1.id,
-                            order=2,
-                            text="Paralelismo executa simultaneamente em múltiplos núcleos",
-                            is_correct=True,
-                        ),
+                        QuizOption(question_id=q1.id,order=2,text="Paralelismo executa simultaneamente em múltiplos núcleos",is_correct=True,),
                         QuizOption(question_id=q1.id, order=3, text="Concorrência só existe em GPU", is_correct=False),
-                        QuizOption(question_id=q1.id, order=4, text="Paralelismo é apenas teórico", is_correct=False),
-                    ]
-                )
+                        QuizOption(question_id=q1.id, order=4, text="Paralelismo é apenas teórico", is_correct=False),])
 
                 q2 = QuizQuestion(
                     quiz_id=q.id,
@@ -183,8 +168,8 @@ async def seed_mock_data():
                     explanation="O limite do speedup paralelo depende da fração sequencial do programa.",
                     difficulty="MEDIA",
                     points=1,
-                    topic="Speedup",
-                )
+                    topic="Speedup",)
+                
                 session.add(q2)
                 await session.flush()
 
@@ -193,9 +178,7 @@ async def seed_mock_data():
                         QuizOption(question_id=q2.id, order=1, text="Velocidade da CPU", is_correct=False),
                         QuizOption(question_id=q2.id, order=2, text="Limite do speedup paralelo", is_correct=True),
                         QuizOption(question_id=q2.id, order=3, text="Escalonamento de processos", is_correct=False),
-                        QuizOption(question_id=q2.id, order=4, text="Memória cache", is_correct=False),
-                    ]
-                )
+                        QuizOption(question_id=q2.id, order=4, text="Memória cache", is_correct=False),])
 
         # ─────────────────────────────────────────────
         # 4) 10 QUIZZES GLOBAIS (todos podem ver)
@@ -211,27 +194,24 @@ async def seed_mock_data():
             ("Global 07 — OpenMP Básico", "parallel, for, schedule, reduction."),
             ("Global 08 — OpenMP Avançado", "critical, atomic, barrier, sections, tasks."),
             ("Global 09 — Speedup e Amdahl", "Limites teóricos, gargalos, otimização."),
-            ("Global 10 — Boas Práticas", "Debug concorrente, testes, observabilidade, performance."),
-        ]
+            ("Global 10 — Boas Práticas", "Debug concorrente, testes, observabilidade, performance."),]
 
         for i, (t, d) in enumerate(global_quiz_templates, start=1):
             title = f"Quiz {t}"
             desc = d
 
-            qg = await session.scalar(
-                select(Quiz).where(Quiz.professor_id == professor.id, Quiz.title == title)
-            )
+            qg = await session.scalar(select(Quiz).where(Quiz.professor_id == professor.id, Quiz.title == title))
 
             if not qg:
                 qg = Quiz(
-                                        share_code=secrets.token_hex(4).upper(),
+                    share_code=secrets.token_hex(4).upper(),
                     professor_id=professor.id,
                     title=title,
                     description=desc,
                     status=QuizStatus.PUBLISHED,
                     tutor_active=True,
-                    chat_active=True,
-                )
+                    chat_active=True,)
+                
                 session.add(qg)
                 await session.flush()
             else:
@@ -248,8 +228,8 @@ async def seed_mock_data():
                     scope=TutorScope.SOMENTE_QUESTAO_ATUAL,
                     allow_out_of_scope=False,
                     allow_explanation=True,
-                    allow_hints=True,
-                )
+                    allow_hints=True,)
+                
                 session.add(tcg)
 
             # GlobalQuizRequest APPROVED
@@ -263,8 +243,8 @@ async def seed_mock_data():
                     approved_public_slug=_make_slug(qg.title),
                     reviewed_by=admin.id,
                     reviewed_at=datetime.now(timezone.utc),
-                    review_note="Seed: global aprovado automaticamente",
-                )
+                    review_note="Seed: global aprovado automaticamente",)
+                
                 session.add(reqg)
             else:
                 reqg.status = GlobalQuizRequestStatus.APPROVED
@@ -286,8 +266,8 @@ async def seed_mock_data():
                     explanation="Paralelismo implica executar partes simultaneamente (ex.: múltiplos núcleos).",
                     difficulty="MEDIA",
                     points=1,
-                    topic="Fundamentos",
-                )
+                    topic="Fundamentos",)
+                
                 session.add(qq1)
                 await session.flush()
                 session.add_all(
@@ -295,9 +275,7 @@ async def seed_mock_data():
                         QuizOption(question_id=qq1.id, order=1, text="Executar tarefas uma após a outra", is_correct=False),
                         QuizOption(question_id=qq1.id, order=2, text="Executar simultaneamente", is_correct=True),
                         QuizOption(question_id=qq1.id, order=3, text="Somente usar GPU", is_correct=False),
-                        QuizOption(question_id=qq1.id, order=4, text="Somente usar cache", is_correct=False),
-                    ]
-                )
+                        QuizOption(question_id=qq1.id, order=4, text="Somente usar cache", is_correct=False),])
 
                 # Q2
                 qq2 = QuizQuestion(
@@ -307,8 +285,8 @@ async def seed_mock_data():
                     explanation="Acesso concorrente ao mesmo dado sem sincronização apropriada.",
                     difficulty="MEDIA",
                     points=1,
-                    topic="Sincronização",
-                )
+                    topic="Sincronização",)
+                
                 session.add(qq2)
                 await session.flush()
                 session.add_all(
@@ -316,9 +294,7 @@ async def seed_mock_data():
                         QuizOption(question_id=qq2.id, order=1, text="Variável compartilhada sem lock", is_correct=True),
                         QuizOption(question_id=qq2.id, order=2, text="Uso de SSD", is_correct=False),
                         QuizOption(question_id=qq2.id, order=3, text="Uso de IPv6", is_correct=False),
-                        QuizOption(question_id=qq2.id, order=4, text="Código em Python", is_correct=False),
-                    ]
-                )
+                        QuizOption(question_id=qq2.id, order=4, text="Código em Python", is_correct=False),])
 
         # ─────────────────────────────────────────────
         # 5) QUIZ GLOBAL CAD (do sti.zip) - 15 questões
@@ -326,19 +302,18 @@ async def seed_mock_data():
         cad_title = "Quiz CAD — Global"
         cad_desc = "Introdução à CAD, Histórico/Evolução e Ferramentas (base sti.zip)."
 
-        cad_quiz = await session.scalar(
-            select(Quiz).where(Quiz.professor_id == professor.id, Quiz.title == cad_title)
-        )
+        cad_quiz = await session.scalar(select(Quiz).where(Quiz.professor_id == professor.id, Quiz.title == cad_title))
+
         if not cad_quiz:
             cad_quiz = Quiz(
-                                    share_code=secrets.token_hex(4).upper(),
-                    professor_id=professor.id,
+                share_code=secrets.token_hex(4).upper(),
+                professor_id=professor.id,
                 title=cad_title,
                 description=cad_desc,
                 status=QuizStatus.PUBLISHED,
                 tutor_active=True,
-                chat_active=True,
-            )
+                chat_active=True,)
+            
             session.add(cad_quiz)
             await session.flush()
         else:
@@ -354,8 +329,8 @@ async def seed_mock_data():
                 scope=TutorScope.SOMENTE_QUESTAO_ATUAL,
                 allow_out_of_scope=False,
                 allow_explanation=True,
-                allow_hints=True,
-            )
+                allow_hints=True,)
+            
             session.add(cad_tc)
 
         cad_req = await session.scalar(select(GlobalQuizRequest).where(GlobalQuizRequest.quiz_id == cad_quiz.id))
@@ -368,8 +343,8 @@ async def seed_mock_data():
                 approved_public_slug=_make_slug(cad_quiz.title),
                 reviewed_by=admin.id,
                 reviewed_at=datetime.now(timezone.utc),
-                review_note="Seed: CAD aprovado automaticamente",
-            )
+                review_note="Seed: CAD aprovado automaticamente", )
+            
             session.add(cad_req)
         else:
             cad_req.status = GlobalQuizRequestStatus.APPROVED
@@ -389,15 +364,12 @@ async def seed_mock_data():
                     "MEDIA",
                     "Introdução à CAD",
                     1,
-                    [
+                    
                         ("Computer Aided Design", True),
                         ("Computer Automatic Drawing", False),
                         ("Computer Assisted Data", False),
                         ("Control and Design", False),
-                        ("Calculation and Design", False),
-                    ],
-                ),
-                (
+                        ("Calculation and Design", False),),(
                     "Qual é a principal função do CAD?",
                     "A função principal é criar/editar projetos e desenhos técnicos (2D/3D).",
                     "FACIL",
@@ -408,9 +380,7 @@ async def seed_mock_data():
                         ("Editar vídeos", False),
                         ("Criar planilhas", False),
                         ("Programar sistemas", False),
-                        ("Criar animações 3D apenas", False),
-                    ],
-                ),
+                        ("Criar animações 3D apenas", False),],),
                 (
                     "Qual dessas áreas utiliza CAD com frequência?",
                     "Engenharia usa CAD para desenho técnico, modelagem e documentação.",
@@ -423,8 +393,7 @@ async def seed_mock_data():
                         ("Gastronomia", False),
                         ("Psicologia", False),
                         ("Teatro", False),
-                    ],
-                ),
+                    ],),
                 (
                     "CAD é usado principalmente para:",
                     "CAD é usado para desenho técnico e modelagem de peças/projetos.",

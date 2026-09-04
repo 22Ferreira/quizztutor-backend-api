@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, text
 from datetime import datetime, timezone
@@ -7,6 +7,7 @@ from app.utils.rbac import require_roles, get_current_user
 from app.models import User, UserRole
 from app.models.quiz import Quiz, QuizQuestion
 from app.models.attempt import Attempt, AttemptStatus, Answer
+from app.models.assignment import Assignment
 from app.models.classroom import Class, ClassEnrollment
 from app.models.audit import TutorInteraction
 
@@ -163,17 +164,26 @@ async def quiz_difficulty_analytics(
 @router.get("/student/{student_id}")
 async def student_analytics(
     student_id: str,
+    class_id: str | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
     me: User = Depends(get_current_user),):
     if me.role == UserRole.ALUNO and str(me.id) != student_id:
         raise HTTPException(status_code=403, detail="Forbidden")
 
-    att_q = await db.execute(
-        select(Attempt).where(
-            Attempt.participant_user_id == student_id,
-            Attempt.status == "SUBMITTED",
+    conditions = [
+        Attempt.participant_user_id == student_id,
+        Attempt.status == "SUBMITTED",
+    ]
+    if class_id:
+        # class_id não é gravado no Attempt na criação — só assignment_id.
+        # A turma da tentativa vem da atribuição (Assignment.class_id).
+        assignment_ids_q = await db.execute(
+            select(Assignment.id).where(Assignment.class_id == class_id)
         )
-    )
+        assignment_ids = [row[0] for row in assignment_ids_q.all()]
+        conditions.append(Attempt.assignment_id.in_(assignment_ids))
+
+    att_q = await db.execute(select(Attempt).where(*conditions))
     attempts = att_q.scalars().all()
 
     if not attempts:

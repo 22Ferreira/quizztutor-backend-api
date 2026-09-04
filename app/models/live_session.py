@@ -73,6 +73,11 @@ class LiveSession(Base):
     )
     allow_late_join: Mapped[bool]       = mapped_column(Boolean, nullable=False, server_default=text("TRUE"))
     allow_rejoin: Mapped[bool]          = mapped_column(Boolean, nullable=False, server_default=text("TRUE"))
+    # Quando True (padrão): aprovado uma vez, o aluno entra/sai livremente sem
+    # precisar de nova aprovação. Quando False: toda nova entrada (mesmo do
+    # mesmo aluno) volta para a fila de aprovação. Só tem efeito com
+    # entry_policy=APPROVAL_REQUIRED.
+    single_approval: Mapped[bool]       = mapped_column(Boolean, nullable=False, server_default=text("TRUE"))
     shuffle_questions: Mapped[bool]     = mapped_column(Boolean, nullable=False, server_default=text("FALSE"))
     shuffle_options: Mapped[bool]       = mapped_column(Boolean, nullable=False, server_default=text("FALSE"))
     show_ranking_students: Mapped[bool]   = mapped_column(Boolean, nullable=False, server_default=text("FALSE"))

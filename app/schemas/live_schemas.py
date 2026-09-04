@@ -16,6 +16,7 @@ class LiveSessionCreate(BaseModel):
     entry_policy: str = "ONLY_CLASSROOM"
     allow_late_join: bool = True
     allow_rejoin: bool = True
+    single_approval: bool = True
     shuffle_questions: bool = False
     shuffle_options: bool = False
     show_ranking_students: bool = False

@@ -435,6 +435,7 @@ async def create_session(
         entry_policy=body.entry_policy,
         allow_late_join=body.allow_late_join,
         allow_rejoin=body.allow_rejoin,
+        single_approval=body.single_approval,
         shuffle_questions=body.shuffle_questions,
         shuffle_options=body.shuffle_options,
         show_ranking_students=body.show_ranking_students,
@@ -846,7 +847,13 @@ async def join_session(
             raise HTTPException(403, "Reconexão não permitida nesta sessão")
         # Reconectar
         if existing.status in (LiveParticipantStatus.DISCONNECTED, LiveParticipantStatus.KICKED):
-            existing.status = LiveParticipantStatus.WAITING if sess.status == LiveSessionStatus.LOBBY else LiveParticipantStatus.RUNNING
+            # Sem aprovação única: toda nova entrada volta para a fila de aprovação,
+            # mesmo de um aluno que já tinha sido aprovado antes.
+            if sess.entry_policy.value == "APPROVAL_REQUIRED" and not sess.single_approval:
+                existing.approved = False
+                existing.status = LiveParticipantStatus.WAITING
+            else:
+                existing.status = LiveParticipantStatus.WAITING if sess.status == LiveSessionStatus.LOBBY else LiveParticipantStatus.RUNNING
             existing.last_seen_at = _now()
             await db.commit()
         return {

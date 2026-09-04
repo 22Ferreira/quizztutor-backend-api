@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from app.db.session import get_db
 from app.utils.rbac import require_roles, get_current_user
 from app.models import User, UserRole
-from app.models.quiz import Quiz, QuizQuestion
+from app.models.quiz import Quiz, QuizQuestion, QuizOption
 from app.models.attempt import Attempt, AttemptStatus, Answer
 from app.models.assignment import Assignment
 from app.models.classroom import Class, ClassEnrollment
@@ -593,4 +593,85 @@ async def my_performance(
             "avg_pct_with_tutor": avg_with,
             "avg_pct_without_tutor": avg_without,
         },
+    }
+
+
+@router.get("/attempts/{attempt_id}/review")
+async def attempt_review(
+    attempt_id: str,
+    db: AsyncSession = Depends(get_db),
+    me: User = Depends(get_current_user),
+):
+    """Detalhe completo de uma tentativa especifica, questao a questao —
+    usado pelo professor para revisar como um aluno se saiu em um quiz."""
+    if me.role not in (UserRole.ADMIN, UserRole.PROFESSOR):
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    att_q = await db.execute(select(Attempt).where(Attempt.id == attempt_id))
+    attempt = att_q.scalar_one_or_none()
+    if not attempt:
+        raise HTTPException(status_code=404, detail="Tentativa não encontrada")
+
+    quiz_q = await db.execute(select(Quiz).where(Quiz.id == attempt.quiz_id))
+    quiz = quiz_q.scalar_one_or_none()
+    if not quiz:
+        raise HTTPException(status_code=404, detail="Quiz não encontrado")
+    if me.role == UserRole.PROFESSOR and quiz.professor_id != me.id:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    q_q = await db.execute(
+        select(QuizQuestion).where(QuizQuestion.quiz_id == quiz.id).order_by(QuizQuestion.order)
+    )
+    questions = q_q.scalars().all()
+    question_ids = [q.id for q in questions]
+
+    opt_q = await db.execute(
+        select(QuizOption).where(QuizOption.question_id.in_(question_ids)).order_by(QuizOption.order)
+    ) if question_ids else None
+    options_by_q: dict = {}
+    for o in (opt_q.scalars().all() if opt_q else []):
+        options_by_q.setdefault(o.question_id, []).append(o)
+
+    ans_q = await db.execute(select(Answer).where(Answer.attempt_id == attempt.id))
+    answers_by_q = {a.question_id: a for a in ans_q.scalars().all()}
+
+    questions_out = []
+    for q in questions:
+        ans = answers_by_q.get(q.id)
+        opts = [
+            {"id": str(o.id), "text": o.text, "is_correct": o.is_correct}
+            for o in options_by_q.get(q.id, [])
+        ]
+        questions_out.append({
+            "question_id": str(q.id),
+            "order": q.order,
+            "statement": q.statement,
+            "difficulty": q.difficulty,
+            "options": opts,
+            "selected_option_id": str(ans.selected_option_id) if ans and ans.selected_option_id else None,
+            "text_answer": ans.text_answer if ans else None,
+            "is_correct": ans.is_correct if ans else None,
+            "points_awarded": ans.points_awarded if ans else 0,
+            "answered": ans is not None,
+        })
+
+    duration_sec = None
+    if attempt.started_at and attempt.submitted_at:
+        duration_sec = int((attempt.submitted_at - attempt.started_at).total_seconds())
+
+    participant = attempt.participant
+    return {
+        "attempt_id": str(attempt.id),
+        "quiz_id": str(quiz.id),
+        "quiz_title": quiz.title,
+        "student_name": participant.name if participant else attempt.participant_name,
+        "student_email": participant.email if participant else attempt.participant_email,
+        "status": attempt.status.value if hasattr(attempt.status, "value") else attempt.status,
+        "score_obtained": attempt.score_obtained,
+        "score_max": attempt.score_max,
+        "percent": round(attempt.score_obtained / attempt.score_max * 100, 1) if attempt.score_max else 0,
+        "started_at": attempt.started_at.isoformat() if attempt.started_at else None,
+        "submitted_at": attempt.submitted_at.isoformat() if attempt.submitted_at else None,
+        "duration_sec": duration_sec,
+        "questions": questions_out,
     }

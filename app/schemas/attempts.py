@@ -54,3 +54,6 @@ class SubmitResponse(BaseModel):
     status: str
     score_obtained: int
     score_max: int
+    correct_count: int
+    wrong_count: int
+    time_spent: int | None = None

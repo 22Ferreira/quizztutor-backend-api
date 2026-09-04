@@ -480,10 +480,20 @@ async def submit_attempt(
                 "SUBMIT_ATTEMPT", "Attempt", attempt.id,
                 after={"score_obtained": attempt.score_obtained, "score_max": attempt.score_max})
     await db.commit()
+
+    correct_count = sum(1 for a in attempt.answers if a.is_correct)
+    wrong_count = sum(1 for a in attempt.answers if a.is_correct is False)
+    time_spent = None
+    if attempt.started_at and attempt.submitted_at:
+        time_spent = int((attempt.submitted_at - attempt.started_at).total_seconds())
+
     return SubmitResponse(
         status=attempt.status.value,
         score_obtained=attempt.score_obtained,
         score_max=attempt.score_max,
+        correct_count=correct_count,
+        wrong_count=wrong_count,
+        time_spent=time_spent,
     )
 
 

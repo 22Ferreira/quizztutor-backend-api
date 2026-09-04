@@ -153,6 +153,7 @@ class QuestionStatsOut(BaseModel):
     avg_time_ms: float
     most_chosen_option_id: Optional[uuid.UUID]
     question_index: Optional[int] = None
+    difficulty: Optional[str] = None
     correct_users: List[QuestionUserEntry] = []
     wrong_users: List[QuestionUserEntry] = []
 

@@ -214,7 +214,7 @@ async def _build_scoreboard(session_id: uuid.UUID, db: AsyncSession) -> Scoreboa
     return ScoreboardOut(entries=entries, updated_at=_now())
 
 
-async def _build_question_stats(session_id: uuid.UUID, db: AsyncSession) -> list[QuestionStatsOut]:
+async def _build_question_stats(session_id: uuid.UUID, db: AsyncSession, sess=None) -> list[QuestionStatsOut]:
     # Buscar todas as respostas com attempt carregado via join explícito
     r = await db.execute(
         select(LiveAnswer, LiveAttempt.user_id)
@@ -285,6 +285,14 @@ async def _build_question_stats(session_id: uuid.UUID, db: AsyncSession) -> list
             original_index = question_order.index(str(qid)) + 1
         except ValueError:
             original_index = None
+
+        # Dificuldade real da questão: override da sessão (BY_DIFF) > dificuldade padrão da questão
+        difficulty = None
+        if sess and sess.time_by_difficulty:
+            difficulty = (sess.time_by_difficulty.get("overrides") or {}).get(str(qid))
+        if not difficulty and q:
+            difficulty = q.difficulty
+
         result.append(QuestionStatsOut(
             question_id=qid,
             statement_preview=(q.statement[:80] + "...") if q and len(q.statement) > 80 else (q.statement if q else ""),
@@ -295,6 +303,7 @@ async def _build_question_stats(session_id: uuid.UUID, db: AsyncSession) -> list
             avg_time_ms=round(avg_ms, 1),
             most_chosen_option_id=uuid.UUID(most_chosen) if most_chosen else None,
             question_index=original_index,
+            difficulty=difficulty,
             correct_users=s["correct_users"],
             wrong_users=s["wrong_users"],
         ))
@@ -533,7 +542,7 @@ async def get_session_state(
         raise HTTPException(403, "Não autorizado")
 
     scoreboard = await _build_scoreboard(session_id, db)
-    q_stats    = await _build_question_stats(session_id, db)
+    q_stats    = await _build_question_stats(session_id, db, sess)
 
     # Participantes
     p_r = await db.execute(select(LiveParticipant).where(LiveParticipant.session_id == session_id))
@@ -714,7 +723,7 @@ async def get_question_stats(
     sess = await _get_session_or_404(session_id, db)
     if str(sess.created_by) != str(me.id):
         raise HTTPException(403)
-    stats = await _build_question_stats(session_id, db)
+    stats = await _build_question_stats(session_id, db, sess)
     return [s.dict() for s in stats]
 
 

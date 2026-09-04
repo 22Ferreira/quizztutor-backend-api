@@ -211,6 +211,15 @@ async def list_quizzes(db: AsyncSession = Depends(get_db), me: User = Depends(ge
     )
     global_reqs = {str(r.quiz_id): r for r in gr_q.scalars().all()}
 
+    # 1 query para contar tentativas submetidas por quiz — sem N+1
+    from app.models.attempt import Attempt
+    cnt_q = await db.execute(
+        select(Attempt.quiz_id, func.count())
+        .where(Attempt.quiz_id.in_(quiz_ids), Attempt.status == "SUBMITTED")
+        .group_by(Attempt.quiz_id)
+    )
+    attempt_counts = {str(qid): count for qid, count in cnt_q.all()}
+
     result = []
     for quiz_obj in quizzes:
         out = QuizOut.model_validate(quiz_obj, from_attributes=True)
@@ -218,6 +227,7 @@ async def list_quizzes(db: AsyncSession = Depends(get_db), me: User = Depends(ge
         if req:
             out.global_status = req.status.value if hasattr(req.status, "value") else str(req.status)
             out.global_request_id = str(req.id)
+        out.attempt_count = attempt_counts.get(str(quiz_obj.id), 0)
         result.append(out)
     return result
 

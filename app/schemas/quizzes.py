@@ -116,6 +116,7 @@ class QuizOut(BaseModel):
     questions: list[QuestionOut] = Field(default_factory=list)
     global_status: Optional[str] = None
     global_request_id: Optional[str] = None
+    attempt_count: Optional[int] = None
 
     class Config:
         from_attributes = True

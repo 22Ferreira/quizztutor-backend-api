@@ -286,12 +286,13 @@ async def _build_question_stats(session_id: uuid.UUID, db: AsyncSession, sess=No
         except ValueError:
             original_index = None
 
-        # Dificuldade real da questão: override da sessão (BY_DIFF) > dificuldade padrão da questão
+        # Dificuldade só é exibida quando a sessão usa BY_DIFF; fora disso, o campo
+        # difficulty da questão é só um default de banco (não configurado para esta sessão)
         difficulty = None
         if sess and sess.time_by_difficulty:
             difficulty = (sess.time_by_difficulty.get("overrides") or {}).get(str(qid))
-        if not difficulty and q:
-            difficulty = q.difficulty
+            if not difficulty and q:
+                difficulty = q.difficulty
 
         result.append(QuestionStatsOut(
             question_id=qid,
@@ -1139,13 +1140,12 @@ async def get_current_question(
         elapsed = (_now() - sess.started_at.replace(tzinfo=timezone.utc)).total_seconds()
         sess_time_remaining = max(0, int(sess.total_time_seconds - elapsed))
 
-    # Dificuldade efetiva: override do BY_DIFF tem prioridade sobre o campo do banco
+    # Dificuldade só é exibida quando a sessão usa BY_DIFF; fora disso, o campo
+    # difficulty da questão é só um default de banco (não configurado para esta sessão)
     q_difficulty = None
     if sess.time_by_difficulty:
         override_diff = (sess.time_by_difficulty.get("overrides") or {}).get(str(question.id))
         q_difficulty = override_diff or question.difficulty or None
-    else:
-        q_difficulty = question.difficulty or None
 
     return {
         "finished": False,

@@ -173,11 +173,15 @@ async def _build_scoreboard(session_id: uuid.UUID, db: AsyncSession) -> Scoreboa
 
     entries = []
     for att in attempts:
+        part = parts.get(att.user_id)
+        # Expulsos/banidos não contam mais como participantes válidos do
+        # ranking — senão o rank/total ficava incluindo gente que já saiu.
+        if part and part.status in (LiveParticipantStatus.KICKED, LiveParticipantStatus.BANNED):
+            continue
         answered = att.answered_count or 0
         correct  = att.correct_count or 0
         accuracy = (correct / answered * 100) if answered > 0 else 0.0
         avg_ms   = (att.total_time_ms / answered) if answered > 0 else 0.0
-        part     = parts.get(att.user_id)
         status   = part.status.value if part else "UNKNOWN"
 
         # último resultado
@@ -1338,10 +1342,20 @@ async def get_student_result(
     if not att:
         raise HTTPException(404, "Você não participou desta sessão")
 
+    sess = await _get_session_or_404(session_id, db)
     scoreboard = await _build_scoreboard(session_id, db)
     my_entry = next((e for e in scoreboard.entries if e.user_id == me.id), None)
 
+    # Ranking só é definitivo quando a sessão terminou (todos finalizaram,
+    # o professor encerrou, ou o tempo acabou) — antes disso é provisório,
+    # pois outros jogadores ainda podem responder e mudar as posições.
+    is_final = sess.status == LiveSessionStatus.ENDED
+    finished_count = sum(1 for e in scoreboard.entries if e.answered_count >= e.total_questions and e.total_questions > 0)
+
     return {
+        "session_status": sess.status.value,
+        "is_final": is_final,
+        "finished_count": finished_count,
         "correct_count": att.correct_count,
         "answered_count": att.answered_count,
         "total_questions": len(att.question_order),

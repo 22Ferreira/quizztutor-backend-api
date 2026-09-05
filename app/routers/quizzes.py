@@ -1,4 +1,5 @@
 import secrets
+from datetime import datetime
 from pydantic import BaseModel
 from typing import Optional
 import random
@@ -640,6 +641,8 @@ class AssignmentOverridePayload(BaseModel):
     tutor_active_override: Optional[bool] = None
     show_correct_immediate_override: Optional[bool] = None
     practice_mode: Optional[bool] = None
+    expires_at: Optional[datetime] = None
+    clear_expiry: bool = False
 
 @router.patch("/{quiz_id}/assignments/{assignment_id}")
 async def patch_assignment(
@@ -668,6 +671,10 @@ async def patch_assignment(
     a.tutor_active_override = payload.tutor_active_override
     a.show_correct_immediate_override = payload.show_correct_immediate_override
     a.practice_mode = payload.practice_mode
+    if payload.clear_expiry:
+        a.expires_at = None
+    elif payload.expires_at is not None:
+        a.expires_at = payload.expires_at
 
     await db.commit()
     return {"message": "ok"}

@@ -78,10 +78,16 @@ def resolve_question_time(quiz: Quiz, question: QuizQuestion, assignment=None) -
     if question.time_override_seconds and question.time_override_seconds > 0:
         return question.time_override_seconds
     _, _, default_question_seconds, by_difficulty = effective_time_config(quiz, assignment)
-    if by_difficulty and question.difficulty in by_difficulty:
-        v = int(by_difficulty[question.difficulty])
-        if v > 0:
-            return v
+    if by_difficulty:
+        # "overrides" classifica a questão só para esta turma (mesmo mecanismo
+        # da sala ao vivo) — tem prioridade sobre o difficulty do quiz, que às
+        # vezes é só o default "MEDIA" e nunca foi classificado de verdade.
+        overrides = by_difficulty.get("overrides") or {}
+        diff = overrides.get(str(question.id)) or question.difficulty
+        if diff and diff in by_difficulty:
+            v = int(by_difficulty[diff])
+            if v > 0:
+                return v
     if default_question_seconds and default_question_seconds > 0:
         return default_question_seconds
     raise HTTPException(status_code=400, detail="Sem tempo configurado para esta questão")

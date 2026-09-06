@@ -208,6 +208,37 @@ async def current_question(
     )
     answered_ids = {str(r) for r in answered_q.scalars().all()}
 
+    # Auto-finaliza como "tempo esgotado" qualquer questão (modo PER_QUESTION/
+    # MIXED) cujo prazo já passou sem resposta. Sem isso, o timeout de UMA
+    # questão deixava o aluno preso nela pra sempre — o frontend só sabia
+    # encerrar a tentativa INTEIRA ao ver o timer zerar, mesmo faltando
+    # questões. Agora a questão vencida é marcada como errada/sem resposta
+    # e a próxima é servida normalmente.
+    now_check = datetime.now(timezone.utc)
+    states_q = await db.execute(
+        select(AttemptQuestionState).where(AttemptQuestionState.attempt_id == attempt.id)
+    )
+    states_by_qid = {str(s.question_id): s for s in states_q.scalars().all()}
+    any_timed_out = False
+    for qid in order:
+        if qid in answered_ids:
+            continue
+        st = states_by_qid.get(qid)
+        if st and st.question_deadline_at and now_check >= st.question_deadline_at:
+            db.add(Answer(
+                attempt_id=attempt.id,
+                question_id=qid,
+                selected_option_id=None,
+                text_answer=None,
+                is_correct=False,
+                points_awarded=0,
+                practice_retries=0,
+            ))
+            answered_ids.add(qid)
+            any_timed_out = True
+    if any_timed_out:
+        await db.commit()
+
     current_q_id = None
     current_idx = 0
     for idx, qid in enumerate(order):
@@ -285,6 +316,7 @@ async def current_question(
         type=qq.type,
         options=options,
         deadline_at=state.question_deadline_at,
+        attempt_expires_at=attempt.expires_at,
         hints_used=state.hints_used,
         total_questions=len(order),
         quiz_title=quiz_meta.title if quiz_meta else None,

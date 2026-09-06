@@ -559,7 +559,7 @@ async def create_assignment(quiz_id: str, payload: AssignmentCreate, db: AsyncSe
         )
         if dup_q.scalar_one_or_none():
             raise HTTPException(status_code=409, detail="Já existe uma atribuição ativa para este quiz nesta turma.")
-        a = Assignment(quiz_id=quiz.id, type=at, class_id=c.id, expires_at=payload.expires_at, require_identity=payload.require_identity, allow_guest=payload.allow_guest, max_attempts=payload.max_attempts, tutor_active_override=payload.tutor_active_override, show_correct_immediate_override=payload.show_correct_immediate_override, practice_mode=payload.practice_mode)
+        a = Assignment(quiz_id=quiz.id, type=at, class_id=c.id, expires_at=payload.expires_at, require_identity=payload.require_identity, allow_guest=payload.allow_guest, max_attempts=payload.max_attempts, tutor_active_override=payload.tutor_active_override, show_correct_immediate_override=payload.show_correct_immediate_override, practice_mode=payload.practice_mode, time_mode_override=payload.time_mode_override, time_total_seconds_override=payload.time_total_seconds_override, time_default_question_seconds_override=payload.time_default_question_seconds_override, time_by_difficulty_override=payload.time_by_difficulty_override)
         db.add(a)
     elif at == AssignmentType.EMAIL_LIST:
         if not payload.emails:

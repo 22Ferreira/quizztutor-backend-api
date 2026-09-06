@@ -156,6 +156,11 @@ class AssignmentCreate(BaseModel):
     tutor_active_override: Optional[bool] = None
     show_correct_immediate_override: Optional[bool] = None
     practice_mode: Optional[bool] = None
+    # Override de tempo por turma — "tudo ou nada" (mesmo esquema do patch)
+    time_mode_override: Optional[str] = None
+    time_total_seconds_override: Optional[int] = None
+    time_default_question_seconds_override: Optional[int] = None
+    time_by_difficulty_override: Optional[dict] = None
 
 
 class TutorConfigIn(BaseModel):

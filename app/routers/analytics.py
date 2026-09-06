@@ -363,10 +363,51 @@ async def my_performance(
     def _first_try_correct(ans) -> bool:
         return bool(ans.is_correct) and (getattr(ans, "practice_retries", 0) or 0) == 0
 
+    # Dificuldade empírica para questões nunca classificadas pelo professor.
+    # "MEDIA" é só o default do banco (toda questão nasce assim), não um
+    # sinal real — só confiamos em FACIL/DIFICIL quando o professor escolheu
+    # isso manualmente. Para o resto, calculamos a taxa de erro REAL da
+    # questão (entre TODOS os alunos que já a responderam, não só este) e
+    # bucketizamos com os mesmos limiares já usados nas Estatísticas do
+    # professor. Isso é só para exibição — nunca grava de volta no banco.
+    TRUSTED_DIFF = {"FACIL", "EASY", "DIFICIL", "HARD"}
+    untrusted_qids = [
+        qid for qid in qids
+        if not (qq_map.get(qid) and (qq_map[qid].difficulty or "").upper() in TRUSTED_DIFF)
+    ]
+    global_diff_stats: dict = {}
+    if untrusted_qids:
+        gdiff_q = await db.execute(
+            select(
+                Ans.question_id,
+                func.count().label("total"),
+                func.count().filter(Ans.is_correct == True).label("correct"),
+            )
+            .where(Ans.question_id.in_(untrusted_qids))
+            .group_by(Ans.question_id)
+        )
+        global_diff_stats = {row.question_id: row for row in gdiff_q.all()}
+
+    def _effective_difficulty(qid) -> str:
+        qq = qq_map.get(qid)
+        explicit = (qq.difficulty or "").upper() if qq else ""
+        if explicit in ("FACIL", "EASY"):
+            return "FACIL"
+        if explicit in ("DIFICIL", "HARD"):
+            return "DIFICIL"
+        row = global_diff_stats.get(qid)
+        if not row or not row.total:
+            return "MEDIA"  # sem dado suficiente ainda pra estimar
+        error_rate = (row.total - row.correct) / row.total * 100
+        if error_rate > 60:
+            return "DIFICIL"
+        if error_rate > 40:
+            return "MEDIA"
+        return "FACIL"
+
     diff_stats: dict = {}
     for ans in all_answers:
-        qq = qq_map.get(ans.question_id)
-        diff = (qq.difficulty if qq else None) or "UNKNOWN"
+        diff = _effective_difficulty(ans.question_id)
         retries = (getattr(ans, "practice_retries", 0) or 0)
         if diff not in diff_stats:
             diff_stats[diff] = {"total": 0, "correct": 0, "with_retry": 0}
@@ -480,7 +521,7 @@ async def my_performance(
             "statement": qq.statement,
             "topic": qq.topic,
             "skill": qq.skill,
-            "difficulty": qq.difficulty,
+            "difficulty": _effective_difficulty(qid),
             "times_wrong": count,
             "last_result": last_result,
             "has_explanation": bool(qq.explanation),
@@ -519,7 +560,7 @@ async def my_performance(
                 "statement": qq.statement[:100],
                 "topic": qq.topic,
                 "skill": qq.skill,
-                "difficulty": qq.difficulty,
+                "difficulty": _effective_difficulty(ans.question_id),
                 "is_correct": ans.is_correct,
                 "has_explanation": bool(qq.explanation),
                 "explanation": qq.explanation if qq.explanation else None,

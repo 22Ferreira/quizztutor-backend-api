@@ -146,7 +146,7 @@ async def start_attempt(
     # randomize if needed (quiz doesn't store shuffle flag in this model; keep ordered)
 
     score_max = sum(q.points for q in questions)
-    expires_at = calc_attempt_expiry(quiz)
+    expires_at = calc_attempt_expiry(quiz, assignment)
 
     origin = AttemptOrigin.CLASS
     if payload.public_token:
@@ -233,10 +233,18 @@ async def current_question(
     )
     state = state_q.scalar_one_or_none()
     now = datetime.now(timezone.utc)
+
+    # Fetch assignment (se houver) uma vez só — usado tanto pro deadline da
+    # questão quanto pros demais overrides de turma abaixo.
+    asgn = None
+    if attempt.assignment_id:
+        asgn_q = await db.execute(select(Assignment).where(Assignment.id == attempt.assignment_id))
+        asgn = asgn_q.scalar_one_or_none()
+
     if not state:
         quiz_q = await db.execute(select(Quiz).where(Quiz.id == attempt.quiz_id))
         quiz = quiz_q.scalar_one_or_none()
-        deadline = calc_question_deadline(quiz, qq)
+        deadline = calc_question_deadline(quiz, qq, asgn)
         state = AttemptQuestionState(
             attempt_id=attempt.id,
             question_id=qq.id,
@@ -262,16 +270,13 @@ async def current_question(
     show_correct = quiz_meta.show_correct_immediate if quiz_meta else True
     tutor_active = quiz_meta.tutor_active if quiz_meta else False
     practice_mode = False
-    if attempt.assignment_id:
-        asgn_q = await db.execute(select(Assignment).where(Assignment.id == attempt.assignment_id))
-        asgn = asgn_q.scalar_one_or_none()
-        if asgn:
-            if asgn.show_correct_immediate_override is not None:
-                show_correct = asgn.show_correct_immediate_override
-            if asgn.tutor_active_override is not None:
-                tutor_active = asgn.tutor_active_override
-            if asgn.practice_mode:
-                practice_mode = True
+    if asgn:
+        if asgn.show_correct_immediate_override is not None:
+            show_correct = asgn.show_correct_immediate_override
+        if asgn.tutor_active_override is not None:
+            tutor_active = asgn.tutor_active_override
+        if asgn.practice_mode:
+            practice_mode = True
 
     return CurrentQuestionOut(
         question_id=qq.id,

@@ -57,13 +57,31 @@ def validate_publish(quiz: Quiz):
         quiz.solutions_released = False
 
 
-def resolve_question_time(quiz: Quiz, question: QuizQuestion) -> int:
+def effective_time_config(quiz: Quiz, assignment=None):
+    """Resolve a configuração de tempo efetiva: se a turma/atribuição tiver um
+    override de tempo definido, ele tem prioridade total sobre o do quiz —
+    não é uma mescla campo a campo, é "ou usa tudo da turma, ou tudo do quiz".
+    Retorna (mode, total_seconds, default_question_seconds, by_difficulty).
+    """
+    if assignment is not None and getattr(assignment, "time_mode_override", None):
+        return (
+            assignment.time_mode_override,
+            assignment.time_total_seconds_override,
+            assignment.time_default_question_seconds_override,
+            assignment.time_by_difficulty_override,
+        )
+    mode = quiz.tempo_mode if isinstance(quiz.tempo_mode, str) else quiz.tempo_mode.value
+    return (mode, quiz.time_total_seconds, quiz.time_default_question_seconds, quiz.time_by_difficulty)
+
+
+def resolve_question_time(quiz: Quiz, question: QuizQuestion, assignment=None) -> int:
     if question.time_override_seconds and question.time_override_seconds > 0:
         return question.time_override_seconds
-    if quiz.time_by_difficulty and question.difficulty in quiz.time_by_difficulty:
-        v = int(quiz.time_by_difficulty[question.difficulty])
+    _, _, default_question_seconds, by_difficulty = effective_time_config(quiz, assignment)
+    if by_difficulty and question.difficulty in by_difficulty:
+        v = int(by_difficulty[question.difficulty])
         if v > 0:
             return v
-    if quiz.time_default_question_seconds and quiz.time_default_question_seconds > 0:
-        return quiz.time_default_question_seconds
+    if default_question_seconds and default_question_seconds > 0:
+        return default_question_seconds
     raise HTTPException(status_code=400, detail="Sem tempo configurado para esta questão")

@@ -629,6 +629,11 @@ async def list_assignments(quiz_id: str, db: AsyncSession = Depends(get_db), me:
             "quiz_max_attempts": quiz.max_attempts if hasattr(quiz, 'max_attempts') else 1,
             "tutor_active_override": a.tutor_active_override,
             "show_correct_immediate_override": a.show_correct_immediate_override,
+            "practice_mode": a.practice_mode,
+            "time_mode_override": a.time_mode_override,
+            "time_total_seconds_override": a.time_total_seconds_override,
+            "time_default_question_seconds_override": a.time_default_question_seconds_override,
+            "time_by_difficulty_override": a.time_by_difficulty_override,
         }
         if a.public_links:
             d["public_token"] = a.public_links[0].token
@@ -643,6 +648,13 @@ class AssignmentOverridePayload(BaseModel):
     practice_mode: Optional[bool] = None
     expires_at: Optional[datetime] = None
     clear_expiry: bool = False
+    # Override de tempo por turma — "tudo ou nada": se a turma sobrescreve,
+    # usa exclusivamente esses campos, ignorando a config de tempo do quiz.
+    time_mode_override: Optional[str] = None
+    time_total_seconds_override: Optional[int] = None
+    time_default_question_seconds_override: Optional[int] = None
+    time_by_difficulty_override: Optional[dict] = None
+    clear_time_override: bool = False
 
 @router.patch("/{quiz_id}/assignments/{assignment_id}")
 async def patch_assignment(
@@ -675,6 +687,17 @@ async def patch_assignment(
         a.expires_at = None
     elif payload.expires_at is not None:
         a.expires_at = payload.expires_at
+
+    if payload.clear_time_override:
+        a.time_mode_override = None
+        a.time_total_seconds_override = None
+        a.time_default_question_seconds_override = None
+        a.time_by_difficulty_override = None
+    elif payload.time_mode_override is not None:
+        a.time_mode_override = payload.time_mode_override
+        a.time_total_seconds_override = payload.time_total_seconds_override
+        a.time_default_question_seconds_override = payload.time_default_question_seconds_override
+        a.time_by_difficulty_override = payload.time_by_difficulty_override
 
     await db.commit()
     return {"message": "ok"}

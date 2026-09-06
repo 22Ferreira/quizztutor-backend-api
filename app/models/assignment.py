@@ -1,5 +1,5 @@
 import enum, uuid, secrets
-from sqlalchemy import String, DateTime, ForeignKey, Boolean, Enum, text, UniqueConstraint, Integer
+from sqlalchemy import String, DateTime, ForeignKey, Boolean, Enum, text, UniqueConstraint, Integer, JSON
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
@@ -25,6 +25,11 @@ class Assignment(Base):
     show_correct_immediate_override: Mapped[bool] = mapped_column(Boolean, nullable=True)
     # Modo Prática: resposta errada → dica + retry (não conta na nota até acertar ou desistir)
     practice_mode: Mapped[bool] = mapped_column(Boolean, nullable=True)
+    # Override de tempo por turma (null em time_mode_override = usa a configuração do quiz)
+    time_mode_override: Mapped[str] = mapped_column(String(16), nullable=True)
+    time_total_seconds_override: Mapped[int] = mapped_column(Integer, nullable=True)
+    time_default_question_seconds_override: Mapped[int] = mapped_column(Integer, nullable=True)
+    time_by_difficulty_override: Mapped[dict] = mapped_column(JSON, nullable=True)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
 
     quiz = relationship("Quiz", lazy="selectin")

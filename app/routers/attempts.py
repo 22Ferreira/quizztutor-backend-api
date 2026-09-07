@@ -16,9 +16,9 @@ from app.schemas.attempts import (
     StartAttemptRequest, AttemptOut, CurrentQuestionOut, AnswerRequest, SubmitResponse,
     PauseExtendRequest, PauseExtendResponse,
 )
-from app.services.attempt_rules import ensure_attempt_active, calc_attempt_expiry, calc_question_deadline
+from app.services.attempt_rules import ensure_attempt_active, calc_attempt_expiry
 from app.services.audit import audit, event, _bg_event, _bg_audit
-from app.services.quiz_rules import resolve_question_time
+from app.services.quiz_rules import resolve_question_time, effective_time_config
 
 router = APIRouter(prefix="/attempts", tags=["attempts"])
 
@@ -279,30 +279,40 @@ async def current_question(
         asgn_q = await db.execute(select(Assignment).where(Assignment.id == attempt.assignment_id))
         asgn = asgn_q.scalar_one_or_none()
 
+    quiz_meta_q = await db.execute(select(Quiz).where(Quiz.id == attempt.quiz_id))
+    quiz_meta = quiz_meta_q.scalar_one_or_none()
+
     if not state:
-        quiz_q = await db.execute(select(Quiz).where(Quiz.id == attempt.quiz_id))
-        quiz = quiz_q.scalar_one_or_none()
-        deadline = calc_question_deadline(quiz, qq, asgn)
+        # O prazo NÃO é fixado aqui — só o instante em que a questão foi
+        # aberta (opened_at). O deadline real só é calculado quando o
+        # frontend confirma, via /start-timer, que a questão já está na
+        # tela: se fixássemos agora, uma conexão lenta (ou VPS momentaneamente
+        # devagar) descontaria do aluno o tempo de ida-e-volta da rede antes
+        # dele sequer conseguir ler a pergunta.
         state = AttemptQuestionState(
             attempt_id=attempt.id,
             question_id=qq.id,
             opened_at=now,
-            question_deadline_at=deadline,
+            question_deadline_at=None,
         )
         db.add(state)
         attempt.last_activity_at = now
         await db.commit()
         await db.refresh(state)
 
+    # Duração total, pra o frontend saber quanto pedir no /start-timer e
+    # montar o círculo/label — sem fixar o prazo em si.
+    time_allotted = None
+    if quiz_meta:
+        mode, _, _, _ = effective_time_config(quiz_meta, asgn)
+        if mode in ("PER_QUESTION", "MIXED"):
+            time_allotted = resolve_question_time(quiz_meta, qq, asgn)
+
     # Build options (hide is_correct if evaluation mode - handled later by quiz mode)
     options = [
         {"id": str(o.id), "text": o.text, "order": o.order}
         for o in sorted(qq.options, key=lambda x: x.order)
     ]
-
-    # Fetch quiz for metadata (show_correct_immediate, title)
-    quiz_meta_q = await db.execute(select(Quiz).where(Quiz.id == attempt.quiz_id))
-    quiz_meta = quiz_meta_q.scalar_one_or_none()
 
     # Apply assignment overrides if present
     show_correct = quiz_meta.show_correct_immediate if quiz_meta else True
@@ -323,6 +333,7 @@ async def current_question(
         type=qq.type,
         options=options,
         deadline_at=state.question_deadline_at,
+        time_allotted_seconds=time_allotted,
         attempt_expires_at=attempt.expires_at,
         hints_used=state.hints_used,
         total_questions=len(order),
@@ -335,6 +346,56 @@ async def current_question(
         attachment_urls=qq.attachment_urls or [],
         short_reference=qq.short_reference,
     )
+
+
+@router.post("/{attempt_id}/questions/{question_id}/start-timer", response_model=PauseExtendResponse)
+async def start_question_timer(
+    attempt_id: str,
+    question_id: str,
+    db: AsyncSession = Depends(get_db),
+    me: User | None = Depends(get_optional_user),
+):
+    """Fixa o prazo da questão só agora — quando o frontend confirma que já
+    recebeu e renderizou a pergunta — em vez de no instante em que o GET
+    current-question foi processado. Sem isso, o tempo de ida-e-volta da
+    rede (ou uma VPS momentaneamente devagar) descontava do aluno uma fatia
+    do prazo antes dele sequer conseguir ler a questão. Idempotente: se o
+    prazo já foi fixado (segunda chamada, ex. de um reload), só devolve o
+    que já está salvo, sem reiniciar a contagem."""
+    att_q = await db.execute(select(Attempt).where(Attempt.id == attempt_id))
+    attempt = att_q.scalar_one_or_none()
+    if not attempt:
+        raise HTTPException(status_code=404, detail="Tentativa não encontrada")
+    ensure_attempt_active(attempt)
+
+    state_q = await db.execute(
+        select(AttemptQuestionState).where(
+            AttemptQuestionState.attempt_id == attempt.id,
+            AttemptQuestionState.question_id == question_id,
+        )
+    )
+    state = state_q.scalar_one_or_none()
+    if not state:
+        raise HTTPException(status_code=404, detail="Questão não iniciada")
+
+    if state.question_deadline_at is None:
+        qq_q = await db.execute(select(QuizQuestion).where(QuizQuestion.id == question_id))
+        qq = qq_q.scalar_one_or_none()
+        quiz_q = await db.execute(select(Quiz).where(Quiz.id == attempt.quiz_id))
+        quiz = quiz_q.scalar_one_or_none()
+        asgn = None
+        if attempt.assignment_id:
+            asgn_q = await db.execute(select(Assignment).where(Assignment.id == attempt.assignment_id))
+            asgn = asgn_q.scalar_one_or_none()
+        if qq and quiz:
+            mode, _, _, _ = effective_time_config(quiz, asgn)
+            if mode in ("PER_QUESTION", "MIXED"):
+                seconds = resolve_question_time(quiz, qq, asgn)
+                state.question_deadline_at = datetime.now(timezone.utc) + timedelta(seconds=seconds)
+                await db.commit()
+                await db.refresh(state)
+
+    return PauseExtendResponse(deadline_at=state.question_deadline_at)
 
 
 @router.post("/{attempt_id}/answer")

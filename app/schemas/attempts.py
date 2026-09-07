@@ -31,6 +31,7 @@ class CurrentQuestionOut(BaseModel):
     type: str
     options: list[dict]
     deadline_at: datetime | None = None
+    time_allotted_seconds: int | None = None
     attempt_expires_at: datetime | None = None
     hints_used: int
     total_questions: int | None = None

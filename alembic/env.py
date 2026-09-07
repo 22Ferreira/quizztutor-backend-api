@@ -67,6 +67,10 @@ async def run_migrations_online() -> None:
 
 def run_migrations_online_entry():
     import asyncio
+    if sys.platform == "win32":
+        # ProactorEventLoop (padrão no Windows) não suporta o modo async do
+        # psycopg — sem isso, alembic quebra em dev local no Windows.
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     asyncio.run(run_migrations_online())
 
 

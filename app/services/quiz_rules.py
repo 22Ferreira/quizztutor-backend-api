@@ -84,8 +84,9 @@ def resolve_question_time(quiz: Quiz, question: QuizQuestion, assignment=None) -
         # vezes é só o default "MEDIA" e nunca foi classificado de verdade.
         overrides = by_difficulty.get("overrides") or {}
         diff = overrides.get(str(question.id)) or question.difficulty
-        if diff and diff in by_difficulty:
-            v = int(by_difficulty[diff])
+        raw = by_difficulty.get(diff) if diff else None
+        if raw is not None:
+            v = int(raw)
             if v > 0:
                 return v
     if default_question_seconds and default_question_seconds > 0:

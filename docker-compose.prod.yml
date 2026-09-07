@@ -44,6 +44,8 @@ services:
       - ENV=prod
     ports:
       - "8000:8000"
+    volumes:
+      - uploads_data:/app/uploads
     depends_on:
       db:
         condition: service_healthy
@@ -68,3 +70,4 @@ services:
 volumes:
   pgdata:
   redisdata:
+  uploads_data:

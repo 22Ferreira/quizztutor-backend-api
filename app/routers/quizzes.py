@@ -720,6 +720,10 @@ async def patch_assignment(
         # Só reseta quem está NO MEIO de uma tentativa (IN_PROGRESS) — quem
         # já terminou (SUBMITTED/EXPIRED) mantém o resultado normalmente, e
         # quem ainda nem começou já vai pegar a config nova automaticamente.
+        # Marca como CANCELLED em vez de apagar: o aluno consegue começar
+        # uma tentativa nova (não conta pro limite de tentativas), mas o
+        # registro de que ele chegou a responder algo continua existindo
+        # no histórico dele — só sem entrar na média/nota.
         stale_q = await db.execute(
             select(Attempt).where(
                 Attempt.assignment_id == a.id,
@@ -728,7 +732,7 @@ async def patch_assignment(
         )
         stale_attempts = stale_q.scalars().all()
         for stale in stale_attempts:
-            await db.delete(stale)
+            stale.status = AttemptStatus.CANCELLED
         reset_count = len(stale_attempts)
 
     await db.commit()

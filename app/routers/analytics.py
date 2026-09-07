@@ -586,6 +586,7 @@ async def my_performance(
             "attempt_id": str(a.id),
             "quiz_id": str(a.quiz_id),
             "quiz_title": quiz.title if quiz else "Quiz",
+            "status": "SUBMITTED",
             "pct": pct,
             "score_obtained": a.score_obtained,
             "score_max": a.score_max,
@@ -599,6 +600,46 @@ async def my_performance(
             "submitted_at": a.submitted_at.isoformat() if a.submitted_at else None,
             "questions": questions_data,
         })
+
+    # ── Tentativas canceladas (turma mudou o tempo no meio do quiz) ────
+    # Não apaga o rastro do aluno — ele vê que chegou a começar/responder
+    # algo, só não entra na média/nota, já que não foi concluída de fato.
+    cancelled_q = await db.execute(
+        select(Att).where(
+            Att.participant_user_id == student_id,
+            Att.status == "CANCELLED",
+        ).order_by(Att.started_at.desc())
+    )
+    cancelled_attempts = cancelled_q.scalars().all()
+    if cancelled_attempts:
+        c_ids = [c.id for c in cancelled_attempts]
+        c_ans_q = await db.execute(select(Ans).where(Ans.attempt_id.in_(c_ids)))
+        c_answers = c_ans_q.scalars().all()
+        c_quiz_ids = list({c.quiz_id for c in cancelled_attempts})
+        c_quiz_q = await db.execute(select(Quiz).where(Quiz.id.in_(c_quiz_ids)))
+        c_quiz_map = {q.id: q for q in c_quiz_q.scalars().all()}
+        for c in cancelled_attempts:
+            answered_n = sum(1 for x in c_answers if x.attempt_id == c.id)
+            cq = c_quiz_map.get(c.quiz_id)
+            quiz_detail.append({
+                "attempt_id": str(c.id),
+                "quiz_id": str(c.quiz_id),
+                "quiz_title": cq.title if cq else "Quiz",
+                "status": "CANCELLED",
+                "pct": None,
+                "score_obtained": None,
+                "score_max": None,
+                "correct": None,
+                "correct_first_try": None,
+                "correct_with_retry": None,
+                "wrong": None,
+                "hints_used": 0,
+                "tutor_interactions": 0,
+                "duration_sec": None,
+                "submitted_at": c.started_at.isoformat() if c.started_at else None,
+                "answered_count": answered_n,
+                "questions": [],
+            })
 
     # ── Tutor summary ─────────────────────────────────────────────────
     tutor_total = len(tutor_ints)

@@ -51,6 +51,13 @@ class AnswerRequest(BaseModel):
     skip: bool = False              # True = ignorar modo prática e salvar mesmo errado
     practice_retries: int = 0       # quantas vezes errou antes desta resposta final
 
+class PauseExtendRequest(BaseModel):
+    question_id: UUID
+    away_seconds: int
+
+class PauseExtendResponse(BaseModel):
+    deadline_at: datetime | None = None
+
 class SubmitResponse(BaseModel):
     status: str
     score_obtained: int

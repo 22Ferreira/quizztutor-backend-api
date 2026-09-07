@@ -1,5 +1,5 @@
 import random
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request, Query, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -14,12 +14,19 @@ from app.models.attempt import Attempt, AttemptStatus, AttemptOrigin, AttemptQue
 from app.models.audit import EventLog
 from app.schemas.attempts import (
     StartAttemptRequest, AttemptOut, CurrentQuestionOut, AnswerRequest, SubmitResponse,
+    PauseExtendRequest, PauseExtendResponse,
 )
 from app.services.attempt_rules import ensure_attempt_active, calc_attempt_expiry, calc_question_deadline
 from app.services.audit import audit, event, _bg_event, _bg_audit
 from app.services.quiz_rules import resolve_question_time
 
 router = APIRouter(prefix="/attempts", tags=["attempts"])
+
+# Tolerância pro corte de prazo por questão — sem isso, uma resposta clicada
+# a poucos milissegundos do fim chega ao servidor já depois do deadline por
+# causa da latência de rede, e o aluno vê "esgotado" mesmo respondendo antes
+# do cronômetro zerar na tela dele.
+ANSWER_GRACE = timedelta(seconds=2)
 
 
 async def _resolve_participant(
@@ -224,7 +231,7 @@ async def current_question(
         if qid in answered_ids:
             continue
         st = states_by_qid.get(qid)
-        if st and st.question_deadline_at and now_check >= st.question_deadline_at:
+        if st and st.question_deadline_at and now_check >= st.question_deadline_at + ANSWER_GRACE:
             db.add(Answer(
                 attempt_id=attempt.id,
                 question_id=qid,
@@ -364,7 +371,7 @@ async def submit_answer(
     )
     state = state_q.scalar_one_or_none()
     now = datetime.now(timezone.utc)
-    if state and state.question_deadline_at and now >= state.question_deadline_at:
+    if state and state.question_deadline_at and now >= state.question_deadline_at + ANSWER_GRACE:
         raise HTTPException(status_code=400, detail="Tempo da questão esgotado")
 
     qq_q = await db.execute(select(QuizQuestion).where(QuizQuestion.id == payload.question_id))
@@ -496,6 +503,40 @@ async def use_hint(
     })
     await db.commit()
     return {"hint": hint_text, "level": next_level}
+
+
+@router.post("/{attempt_id}/pause-extend", response_model=PauseExtendResponse)
+async def pause_extend(
+    attempt_id: str,
+    payload: PauseExtendRequest,
+    db: AsyncSession = Depends(get_db),
+    me: User | None = Depends(get_optional_user),
+):
+    """Empurra o prazo da questão pra frente pelo tempo que o aluno ficou
+    fora da aba — só se aplica ao tempo POR QUESTÃO/MISTO, que existe pra
+    medir tempo de raciocínio numa questão específica. O tempo TOTAL da
+    tentativa (modo exame cronometrado) nunca é afetado por isto — continua
+    correndo mesmo com o aluno fora, de propósito."""
+    att_q = await db.execute(select(Attempt).where(Attempt.id == attempt_id))
+    attempt = att_q.scalar_one_or_none()
+    if not attempt:
+        raise HTTPException(status_code=404, detail="Tentativa não encontrada")
+    ensure_attempt_active(attempt)
+
+    state_q = await db.execute(
+        select(AttemptQuestionState).where(
+            AttemptQuestionState.attempt_id == attempt.id,
+            AttemptQuestionState.question_id == payload.question_id,
+        )
+    )
+    state = state_q.scalar_one_or_none()
+    if state and state.question_deadline_at and payload.away_seconds > 0:
+        away = min(payload.away_seconds, 24 * 3600)
+        state.question_deadline_at = state.question_deadline_at + timedelta(seconds=away)
+        await db.commit()
+        await db.refresh(state)
+
+    return PauseExtendResponse(deadline_at=state.question_deadline_at if state else None)
 
 
 @router.post("/{attempt_id}/submit", response_model=SubmitResponse)

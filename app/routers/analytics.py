@@ -6,7 +6,7 @@ from app.db.session import get_db
 from app.utils.rbac import require_roles, get_current_user
 from app.models import User, UserRole
 from app.models.quiz import Quiz, QuizQuestion, QuizOption
-from app.models.attempt import Attempt, AttemptStatus, Answer
+from app.models.attempt import Attempt, AttemptStatus, Answer, AttemptQuestionState
 from app.models.assignment import Assignment
 from app.models.classroom import Class, ClassEnrollment
 from app.models.audit import TutorInteraction
@@ -313,15 +313,29 @@ async def my_performance(
         for q in qz_q.scalars().all():
             quiz_map[q.id] = q
 
-    # ── Hints per attempt (sum of AttemptQuestionState.hints_used) ──
+    # ── Hints por tentativa + tempo ATIVO por tentativa ─────────────────
+    # "Tempo" não pode ser (submitted_at - started_at): se o aluno responde
+    # tudo e só fecha a aba sem finalizar, a tentativa fica pendurada e só
+    # é encerrada quando ele volta a abrir o quiz — às vezes horas depois —
+    # inflando o tempo "gasto" com tempo em que ele nem estava presente.
+    # Em vez disso, somamos quanto tempo cada questão levou de verdade
+    # (opened_at → answered_at), que já é registrado por questão.
     hints_by_attempt: dict = {}
+    active_duration_by_attempt: dict = {}
     if attempt_ids:
         qs_q = await db.execute(
             select(AttemptQuestionState).where(AttemptQuestionState.attempt_id.in_(attempt_ids))
         )
-        for qs in qs_q.scalars().all():
+        states = qs_q.scalars().all()
+        answered_at_by_key = {(a.attempt_id, a.question_id): a.answered_at for a in all_answers}
+        for qs in states:
             aid = qs.attempt_id
             hints_by_attempt[aid] = hints_by_attempt.get(aid, 0) + qs.hints_used
+            answered_at = answered_at_by_key.get((qs.attempt_id, qs.question_id))
+            if qs.opened_at and answered_at:
+                gap = (answered_at - qs.opened_at).total_seconds()
+                if gap > 0:
+                    active_duration_by_attempt[aid] = active_duration_by_attempt.get(aid, 0) + gap
 
     # ── Tutor interactions ────────────────────────────────────────────
     tutor_q = await db.execute(
@@ -339,10 +353,9 @@ async def my_performance(
 
     durations = []
     for a in attempts:
-        if a.started_at and a.submitted_at:
-            d = (a.submitted_at - a.started_at).total_seconds()
-            if 0 < d < 7200:
-                durations.append(d)
+        d = active_duration_by_attempt.get(a.id)
+        if d and 0 < d < 7200:
+            durations.append(d)
     avg_duration = round(sum(durations) / len(durations)) if durations else 0
 
     # ── Evolution (per attempt timeline) ─────────────────────────────
@@ -352,7 +365,7 @@ async def my_performance(
             "quiz_title": quiz_map.get(a.quiz_id, {}).title if hasattr(quiz_map.get(a.quiz_id, {}), "title") else "Quiz",
             "pct": round(a.score_obtained / a.score_max * 100, 1) if a.score_max else 0,
             "submitted_at": a.submitted_at.isoformat() if a.submitted_at else None,
-            "duration_sec": round((a.submitted_at - a.started_at).total_seconds()) if a.started_at and a.submitted_at else None,
+            "duration_sec": round(active_duration_by_attempt[a.id]) if active_duration_by_attempt.get(a.id) else None,
             "hints_used": hints_by_attempt.get(a.id, 0),
         }
         for a in attempts
@@ -540,7 +553,7 @@ async def my_performance(
         wrong_c = sum(1 for x in my_answers if x.is_correct is False)
         hints_c = hints_by_attempt.get(a.id, 0)
         tutor_c = sum(1 for t in tutor_ints if t.attempt_id == a.id)
-        dur = round((a.submitted_at - a.started_at).total_seconds()) if a.started_at and a.submitted_at else None
+        dur = round(active_duration_by_attempt[a.id]) if active_duration_by_attempt.get(a.id) else None
         pct = round(a.score_obtained / a.score_max * 100, 1) if a.score_max else 0
 
         # per-question data
@@ -676,6 +689,21 @@ async def attempt_review(
     ans_q = await db.execute(select(Answer).where(Answer.attempt_id == attempt.id))
     answers_by_q = {a.question_id: a for a in ans_q.scalars().all()}
 
+    # Tempo ativo (soma de opened_at → answered_at por questão) em vez de
+    # submitted_at - started_at — mesmo raciocínio do my_performance: se o
+    # aluno deixou a tentativa pendurada e só voltou muito depois, o tempo
+    # total decorrido não reflete o tempo que ele realmente gastou.
+    states_q = await db.execute(
+        select(AttemptQuestionState).where(AttemptQuestionState.attempt_id == attempt.id)
+    )
+    active_seconds = 0.0
+    for qs in states_q.scalars().all():
+        ans = answers_by_q.get(qs.question_id)
+        if qs.opened_at and ans and ans.answered_at:
+            gap = (ans.answered_at - qs.opened_at).total_seconds()
+            if gap > 0:
+                active_seconds += gap
+
     questions_out = []
     for q in questions:
         ans = answers_by_q.get(q.id)
@@ -696,9 +724,7 @@ async def attempt_review(
             "answered": ans is not None,
         })
 
-    duration_sec = None
-    if attempt.started_at and attempt.submitted_at:
-        duration_sec = int((attempt.submitted_at - attempt.started_at).total_seconds())
+    duration_sec = round(active_seconds) if active_seconds > 0 else None
 
     participant = attempt.participant
     return {

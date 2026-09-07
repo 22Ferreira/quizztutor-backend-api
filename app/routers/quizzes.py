@@ -10,6 +10,7 @@ from sqlalchemy.orm import selectinload
 from app.db.session import get_db
 from app.utils.rbac import require_roles, get_current_user, get_optional_user
 from app.models import User, UserRole, Quiz, QuizStatus, QuizQuestion, QuizOption, TutorConfig, Assignment, AssignmentType, QuizInvite, PublicLink, Class
+from app.models.attempt import Attempt, AttemptStatus
 from app.schemas.quizzes import QuizCreate, QuizOut, QuizUpdate, AssignmentCreate, TutorConfigIn
 from app.services.audit import audit
 from app.services.quiz_rules import validate_publish
@@ -688,6 +689,21 @@ async def patch_assignment(
     elif payload.expires_at is not None:
         a.expires_at = payload.expires_at
 
+    # Detecta se a config de tempo desta turma realmente mudou — só isso
+    # justifica resetar quem está no meio de uma tentativa, já que o tempo
+    # de uma tentativa é fixado no momento em que ela começa e nunca mais
+    # é recalculado (mudar depois não tinha efeito nenhum, e travava testes).
+    time_changed = False
+    if payload.clear_time_override:
+        time_changed = a.time_mode_override is not None
+    elif payload.time_mode_override is not None:
+        time_changed = (
+            a.time_mode_override != payload.time_mode_override
+            or a.time_total_seconds_override != payload.time_total_seconds_override
+            or a.time_default_question_seconds_override != payload.time_default_question_seconds_override
+            or a.time_by_difficulty_override != payload.time_by_difficulty_override
+        )
+
     if payload.clear_time_override:
         a.time_mode_override = None
         a.time_total_seconds_override = None
@@ -699,8 +715,24 @@ async def patch_assignment(
         a.time_default_question_seconds_override = payload.time_default_question_seconds_override
         a.time_by_difficulty_override = payload.time_by_difficulty_override
 
+    reset_count = 0
+    if time_changed:
+        # Só reseta quem está NO MEIO de uma tentativa (IN_PROGRESS) — quem
+        # já terminou (SUBMITTED/EXPIRED) mantém o resultado normalmente, e
+        # quem ainda nem começou já vai pegar a config nova automaticamente.
+        stale_q = await db.execute(
+            select(Attempt).where(
+                Attempt.assignment_id == a.id,
+                Attempt.status == AttemptStatus.IN_PROGRESS,
+            )
+        )
+        stale_attempts = stale_q.scalars().all()
+        for stale in stale_attempts:
+            await db.delete(stale)
+        reset_count = len(stale_attempts)
+
     await db.commit()
-    return {"message": "ok"}
+    return {"message": "ok", "reset_in_progress_attempts": reset_count}
 
 @router.delete("/{quiz_id}/assignments/{assignment_id}", dependencies=[Depends(require_roles("PROFESSOR"))])
 async def revoke_assignment(quiz_id: str, assignment_id: str, db: AsyncSession = Depends(get_db), me: User = Depends(get_current_user)):

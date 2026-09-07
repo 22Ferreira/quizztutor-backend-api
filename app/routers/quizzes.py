@@ -724,9 +724,16 @@ async def patch_assignment(
         # uma tentativa nova (não conta pro limite de tentativas), mas o
         # registro de que ele chegou a responder algo continua existindo
         # no histórico dele — só sem entrar na média/nota.
+        #
+        # Escopo por quiz_id (não por assignment_id): start_attempt decide
+        # se retoma uma tentativa existente olhando só quiz_id + usuário +
+        # status, sem levar em conta de qual atribuição ela veio. Se
+        # filtrássemos por assignment_id aqui, uma tentativa presa vinda de
+        # uma atribuição antiga (revogada/recriada) não seria encontrada e
+        # start_attempt continuaria retomando ela do mesmo jeito.
         stale_q = await db.execute(
             select(Attempt).where(
-                Attempt.assignment_id == a.id,
+                Attempt.quiz_id == a.quiz_id,
                 Attempt.status == AttemptStatus.IN_PROGRESS,
             )
         )

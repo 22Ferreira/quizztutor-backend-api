@@ -602,7 +602,7 @@ async def my_performance(
             correct_text = next((o.text for o in opts if o.is_correct), None)
             questions_data.append({
                 "question_id": str(ans.question_id),
-                "statement": qq.statement[:100],
+                "statement": qq.statement,
                 "topic": qq.topic,
                 "skill": qq.skill,
                 "difficulty": _effective_difficulty(ans.question_id),

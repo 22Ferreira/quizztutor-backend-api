@@ -201,6 +201,7 @@ async def list_global_quizzes(
                 description=quiz.description,
                 professor_id=str(quiz.professor_id),
                 approved_at=req.reviewed_at,
+                question_count=len(quiz.questions),
             )
         )
 
@@ -235,6 +236,7 @@ async def get_global_quiz(
         description=quiz.description,
         professor_id=str(quiz.professor_id),
         approved_at=req.reviewed_at,
+        question_count=len(quiz.questions),
     )
 
 

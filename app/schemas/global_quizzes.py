@@ -18,6 +18,7 @@ class GlobalQuizListItem(BaseModel):
     description: str | None = None
     professor_id: str
     approved_at: datetime | None = None
+    question_count: int = 0
 
 class AdminReviewIn(BaseModel):
     review_note: str | None = None

@@ -13,6 +13,14 @@ from app.models.audit import TutorInteraction
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
+# Teto por questão pro cálculo de "tempo ativo" (opened_at → answered_at).
+# Sem isso, um aluno que esquece a aba aberta por horas infla a média pra
+# valores absurdos (ex: "331min") — igual a qualquer analytics de sessão
+# (Google Analytics, Mixpanel etc.), um teto de inatividade é a forma padrão
+# de lidar com isso. Só afeta a estatística exibida: nunca reduz um tempo
+# real mais curto, só limita intervalos anormalmente longos.
+MAX_QUESTION_ACTIVE_SEC = 120
+
 
 def _check_quiz_ownership(quiz: Quiz, me: User):
     if me.role == UserRole.PROFESSOR and quiz.professor_id != me.id:
@@ -86,7 +94,7 @@ async def quiz_students(
             if qs.opened_at and answered_at:
                 gap = (answered_at - qs.opened_at).total_seconds()
                 if gap > 0:
-                    active_duration_by_attempt[qs.attempt_id] = active_duration_by_attempt.get(qs.attempt_id, 0) + gap
+                    active_duration_by_attempt[qs.attempt_id] = active_duration_by_attempt.get(qs.attempt_id, 0) + min(gap, MAX_QUESTION_ACTIVE_SEC)
 
     result = []
     for a in attempts:
@@ -358,7 +366,7 @@ async def my_performance(
             if qs.opened_at and answered_at:
                 gap = (answered_at - qs.opened_at).total_seconds()
                 if gap > 0:
-                    active_duration_by_attempt[aid] = active_duration_by_attempt.get(aid, 0) + gap
+                    active_duration_by_attempt[aid] = active_duration_by_attempt.get(aid, 0) + min(gap, MAX_QUESTION_ACTIVE_SEC)
 
     # ── Tutor interactions ────────────────────────────────────────────
     tutor_q = await db.execute(
@@ -766,7 +774,7 @@ async def attempt_review(
         if qs.opened_at and ans and ans.answered_at:
             gap = (ans.answered_at - qs.opened_at).total_seconds()
             if gap > 0:
-                active_seconds += gap
+                active_seconds += min(gap, MAX_QUESTION_ACTIVE_SEC)
 
     questions_out = []
     for q in questions:

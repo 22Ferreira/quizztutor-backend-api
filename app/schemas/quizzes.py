@@ -19,6 +19,7 @@ class QuestionIn(BaseModel):
     statement: str
     explanation: Optional[str] = None
     difficulty: str = "MEDIA"
+    difficulty_confirmed: bool = False
     points: int = 1
     time_override_seconds: Optional[int] = None
     hint_1: Optional[str] = None
@@ -51,6 +52,7 @@ class QuestionOut(BaseModel):
     statement: str
     explanation: Optional[str]
     difficulty: str
+    difficulty_confirmed: bool
     points: int
     time_override_seconds: Optional[int]
     hint_1: Optional[str]

@@ -86,6 +86,14 @@ class QuizQuestion(Base):
     statement: Mapped[str] = mapped_column(Text, nullable=False)
     explanation: Mapped[str] = mapped_column(Text, nullable=True)
     difficulty: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'MEDIA'"))
+    # True só quando o professor de fato clicou num nível de dificuldade —
+    # "difficulty" sozinha não diferencia "escolhido de propósito" de "nunca
+    # mexido" (o editor pré-preenche "MEDIA"). Estatísticas usam esta flag
+    # pra decidir se confiam no valor escolhido ou calculam empiricamente
+    # pela taxa de erro real; tempo/turma/sessão ao vivo continuam usando
+    # só "difficulty" direto, sem olhar pra esta coluna — nada nesses fluxos
+    # muda.
+    difficulty_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
     points: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
     time_override_seconds: Mapped[int] = mapped_column(Integer, nullable=True)
     hint_1: Mapped[str] = mapped_column(Text, nullable=True)

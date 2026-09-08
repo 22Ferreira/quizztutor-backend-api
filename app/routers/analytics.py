@@ -146,6 +146,7 @@ async def quiz_question_analytics(
             "order": qq.order,
             "statement": qq.statement[:80],
             "difficulty": qq.difficulty,
+            "difficulty_confirmed": qq.difficulty_confirmed,
             "total_answers": total,
             "correct_answers": correct,
             "error_rate": round((total - correct) / total * 100, 1) if total else 0,

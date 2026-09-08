@@ -67,6 +67,27 @@ async def quiz_students(
         select(Attempt).where(Attempt.quiz_id == quiz.id, Attempt.status == "SUBMITTED")
     )
     attempts = att_q.scalars().all()
+
+    # Tempo ativo (soma de opened_at → answered_at por questão) em vez de
+    # submitted_at - started_at — mesmo raciocínio do my_performance: se o
+    # aluno deixa a aba aberta e só volta depois, o relógio de parede conta
+    # esse intervalo todo como "tempo gasto", dando médias absurdas.
+    attempt_ids = [a.id for a in attempts]
+    active_duration_by_attempt: dict = {}
+    if attempt_ids:
+        qs_q = await db.execute(
+            select(AttemptQuestionState).where(AttemptQuestionState.attempt_id.in_(attempt_ids))
+        )
+        states = qs_q.scalars().all()
+        ans_q = await db.execute(select(Answer).where(Answer.attempt_id.in_(attempt_ids)))
+        answered_at_by_key = {(a.attempt_id, a.question_id): a.answered_at for a in ans_q.scalars().all()}
+        for qs in states:
+            answered_at = answered_at_by_key.get((qs.attempt_id, qs.question_id))
+            if qs.opened_at and answered_at:
+                gap = (answered_at - qs.opened_at).total_seconds()
+                if gap > 0:
+                    active_duration_by_attempt[qs.attempt_id] = active_duration_by_attempt.get(qs.attempt_id, 0) + gap
+
     result = []
     for a in attempts:
         user = a.participant
@@ -80,6 +101,7 @@ async def quiz_students(
             "percent": round((a.score_obtained / a.score_max * 100), 1) if a.score_max else 0,
             "started_at": a.started_at.isoformat() if a.started_at else None,
             "submitted_at": a.submitted_at.isoformat() if a.submitted_at else None,
+            "active_duration_sec": round(active_duration_by_attempt[a.id]) if active_duration_by_attempt.get(a.id) else None,
         })
     return result
 

@@ -613,6 +613,28 @@ async def submit_attempt(
     if attempt.status not in (AttemptStatus.IN_PROGRESS,):
         raise HTTPException(status_code=400, detail="Tentativa já finalizada")
 
+    # Marca como "sem resposta" (0 pontos) qualquer questão do quiz que o
+    # aluno nunca chegou a abrir — acontece quando o tempo TOTAL da
+    # tentativa esgota (modo TOTAL/MISTO) antes dele alcançar as últimas
+    # questões. Sem isso, essas questões somem sem deixar rastro: contam
+    # na nota máxima mas não aparecem em lugar nenhum do histórico.
+    answered_q = await db.execute(
+        select(Answer.question_id).where(Answer.attempt_id == attempt.id)
+    )
+    answered_ids = {str(r) for r in answered_q.scalars().all()}
+    for qid in attempt.question_order_json or []:
+        if qid in answered_ids:
+            continue
+        db.add(Answer(
+            attempt_id=attempt.id,
+            question_id=qid,
+            selected_option_id=None,
+            text_answer=None,
+            is_correct=False,
+            points_awarded=0,
+            practice_retries=0,
+        ))
+
     attempt.status = AttemptStatus.SUBMITTED
     attempt.submitted_at = datetime.now(timezone.utc)
     await audit(db, str(attempt.participant_user_id) if attempt.participant_user_id else None,
@@ -620,8 +642,12 @@ async def submit_attempt(
                 after={"score_obtained": attempt.score_obtained, "score_max": attempt.score_max})
     await db.commit()
 
+    def _is_skipped(a) -> bool:
+        return a.selected_option_id is None and not a.text_answer
+
     correct_count = sum(1 for a in attempt.answers if a.is_correct)
-    wrong_count = sum(1 for a in attempt.answers if a.is_correct is False)
+    wrong_count = sum(1 for a in attempt.answers if a.is_correct is False and not _is_skipped(a))
+    skipped_count = sum(1 for a in attempt.answers if _is_skipped(a))
     time_spent = None
     if attempt.started_at and attempt.submitted_at:
         time_spent = int((attempt.submitted_at - attempt.started_at).total_seconds())
@@ -632,6 +658,7 @@ async def submit_attempt(
         score_max=attempt.score_max,
         correct_count=correct_count,
         wrong_count=wrong_count,
+        skipped_count=skipped_count,
         time_spent=time_spent,
     )
 

@@ -65,4 +65,5 @@ class SubmitResponse(BaseModel):
     score_max: int
     correct_count: int
     wrong_count: int
+    skipped_count: int = 0
     time_spent: int | None = None

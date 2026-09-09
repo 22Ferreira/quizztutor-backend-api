@@ -321,6 +321,13 @@ async def my_performance(
     ) if attempt_ids else None
     all_answers = ans_q.scalars().all() if ans_q else []
 
+    def _is_skipped(a) -> bool:
+        # Sem alternativa marcada e sem texto digitado = o aluno nunca
+        # chegou a responder de verdade (tempo esgotou, por questão ou por
+        # ter sobrado questão sem abrir quando o tempo TOTAL acabou) — não
+        # é o mesmo que "respondeu e errou".
+        return a.selected_option_id is None and not a.text_answer
+
     # ── Question map ─────────────────────────────────────────────────
     qids = list({a.question_id for a in all_answers})
     qq_map = {}
@@ -526,8 +533,14 @@ async def my_performance(
     ], key=lambda x: x["pct_correct"])
 
     # ── Wrong questions review list ───────────────────────────────────
-    # Inclui: respostas erradas + respostas que precisaram de retentativa no modo prática
-    wrong_ans = [a for a in all_answers if a.is_correct is False or (getattr(a, "practice_retries", 0) or 0) > 0]
+    # Inclui: respostas erradas de verdade + retentativas no modo prática.
+    # NÃO inclui questões sem resposta por tempo esgotado — o aluno nunca
+    # chegou a ver/tentar a questão, então não há nada pra "revisar" ali.
+    wrong_ans = [
+        a for a in all_answers
+        if (a.is_correct is False and not _is_skipped(a))
+        or (getattr(a, "practice_retries", 0) or 0) > 0
+    ]
     wrong_count: dict = {}
     for ans in wrong_ans:
         qid = ans.question_id
@@ -582,18 +595,22 @@ async def my_performance(
         correct_count = sum(1 for x in my_answers if x.is_correct)
         correct_first = sum(1 for x in my_answers if _first_try_correct(x))
         correct_retry = sum(1 for x in my_answers if x.is_correct and (getattr(x, "practice_retries", 0) or 0) > 0)
-        wrong_c = sum(1 for x in my_answers if x.is_correct is False)
+        wrong_c = sum(1 for x in my_answers if x.is_correct is False and not _is_skipped(x))
+        skipped_c = sum(1 for x in my_answers if _is_skipped(x))
         hints_c = hints_by_attempt.get(a.id, 0)
         tutor_c = sum(1 for t in tutor_ints if t.attempt_id == a.id)
         dur = round(active_duration_by_attempt[a.id]) if active_duration_by_attempt.get(a.id) else None
         pct = round(a.score_obtained / a.score_max * 100, 1) if a.score_max else 0
 
-        # per-question data
+        # per-question data — questões sem resposta por tempo esgotado vão
+        # pro fim da lista, apagadas e sem explicação no front (não faz
+        # sentido "explicar" uma questão que o aluno nunca chegou a ver).
         questions_data = []
         for ans in my_answers:
             qq = qq_map.get(ans.question_id)
             if not qq:
                 continue
+            skipped = _is_skipped(ans)
             opts = sorted(opt_map.get(ans.question_id, []), key=lambda o: o.order)
             selected_text = None
             if ans.selected_option_id:
@@ -608,12 +625,17 @@ async def my_performance(
                 "difficulty": _effective_difficulty(ans.question_id),
                 "difficulty_confirmed": qq.difficulty_confirmed,
                 "is_correct": ans.is_correct,
-                "has_explanation": bool(qq.explanation),
-                "explanation": qq.explanation if qq.explanation else None,
-                "selected_option_text": selected_text or ans.text_answer,
+                "skipped": skipped,
+                "has_explanation": False if skipped else bool(qq.explanation),
+                "explanation": None if skipped else (qq.explanation if qq.explanation else None),
+                "selected_option_text": None if skipped else (selected_text or ans.text_answer),
                 "correct_option_text": correct_text,
                 "practice_retries": getattr(ans, "practice_retries", 0) or 0,
+                "_order": qq.order,
             })
+        questions_data.sort(key=lambda q: (q["skipped"], q["_order"]))
+        for q in questions_data:
+            del q["_order"]
 
         quiz_detail.append({
             "attempt_id": str(a.id),
@@ -627,6 +649,7 @@ async def my_performance(
             "correct_first_try": correct_first,
             "correct_with_retry": correct_retry,
             "wrong": wrong_c,
+            "skipped": skipped_c,
             "hints_used": hints_by_attempt.get(a.id, 0),
             "tutor_interactions": tutor_c,
             "duration_sec": dur,

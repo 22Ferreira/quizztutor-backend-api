@@ -622,8 +622,17 @@ async def submit_attempt(
         select(Answer.question_id).where(Answer.attempt_id == attempt.id)
     )
     answered_ids = {str(r) for r in answered_q.scalars().all()}
-    for qid in attempt.question_order_json or []:
-        if qid in answered_ids:
+    order_ids = attempt.question_order_json or []
+    # A questão pode ter sido apagada/alterada pelo professor depois que a
+    # tentativa começou (comum em quiz de teste) — sem essa checagem, tentar
+    # criar uma resposta apontando pra um question_id que não existe mais
+    # quebra a foreign key e falha a finalização inteira com erro 500.
+    existing_qids_q = await db.execute(
+        select(QuizQuestion.id).where(QuizQuestion.id.in_(order_ids))
+    )
+    existing_qids = {str(r) for r in existing_qids_q.scalars().all()}
+    for qid in order_ids:
+        if qid in answered_ids or qid not in existing_qids:
             continue
         db.add(Answer(
             attempt_id=attempt.id,

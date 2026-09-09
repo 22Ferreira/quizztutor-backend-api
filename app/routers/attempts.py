@@ -659,7 +659,14 @@ async def submit_attempt(
     skipped_count = sum(1 for a in attempt.answers if _is_skipped(a))
     time_spent = None
     if attempt.started_at and attempt.submitted_at:
-        time_spent = int((attempt.submitted_at - attempt.started_at).total_seconds())
+        # Nunca mostra mais tempo do que o limite TOTAL configurado (quando
+        # existe). Sem isso, uma tentativa que ficou parada/travada até ser
+        # finalizada bem depois (ex.: reaberta após um erro) mostraria um
+        # "Tempo" absurdo, maior que o próprio limite da prova.
+        effective_end = attempt.submitted_at
+        if attempt.expires_at and attempt.expires_at < effective_end:
+            effective_end = attempt.expires_at
+        time_spent = int((effective_end - attempt.started_at).total_seconds())
 
     return SubmitResponse(
         status=attempt.status.value,

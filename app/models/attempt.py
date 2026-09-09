@@ -67,5 +67,11 @@ class Answer(Base):
     is_correct: Mapped[bool] = mapped_column(Boolean, nullable=True)
     points_awarded: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sa_text("0"))
     practice_retries: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sa_text("0"))
+    # Marca explicitamente "nunca respondida de verdade, tempo esgotou" —
+    # não pode ser inferido de selected_option_id/text_answer vazios, porque
+    # selected_option_id vira NULL automaticamente (ON DELETE SET NULL)
+    # sempre que o professor edita a questão e as alternativas antigas são
+    # recriadas, o que faria uma resposta ERRADA de verdade parecer pulada.
+    is_timeout: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("false"))
     answered_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=sa_text("now()"))
     attempt = relationship("Attempt", back_populates="answers", lazy="selectin")

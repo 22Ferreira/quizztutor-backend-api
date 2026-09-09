@@ -240,6 +240,7 @@ async def current_question(
                 is_correct=False,
                 points_awarded=0,
                 practice_retries=0,
+                is_timeout=True,
             ))
             answered_ids.add(qid)
             any_timed_out = True
@@ -642,6 +643,7 @@ async def submit_attempt(
             is_correct=False,
             points_awarded=0,
             practice_retries=0,
+            is_timeout=True,
         ))
 
     attempt.status = AttemptStatus.SUBMITTED
@@ -652,7 +654,7 @@ async def submit_attempt(
     await db.commit()
 
     def _is_skipped(a) -> bool:
-        return a.selected_option_id is None and not a.text_answer
+        return a.is_timeout
 
     correct_count = sum(1 for a in attempt.answers if a.is_correct)
     wrong_count = sum(1 for a in attempt.answers if a.is_correct is False and not _is_skipped(a))

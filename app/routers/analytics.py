@@ -322,11 +322,12 @@ async def my_performance(
     all_answers = ans_q.scalars().all() if ans_q else []
 
     def _is_skipped(a) -> bool:
-        # Sem alternativa marcada e sem texto digitado = o aluno nunca
-        # chegou a responder de verdade (tempo esgotou, por questão ou por
-        # ter sobrado questão sem abrir quando o tempo TOTAL acabou) — não
-        # é o mesmo que "respondeu e errou".
-        return a.selected_option_id is None and not a.text_answer
+        # Marcação explícita de "tempo esgotou, nunca respondeu de verdade".
+        # NÃO usar selected_option_id/text_answer pra inferir isso: o
+        # professor pode editar a questão depois (recriando as alternativas),
+        # o que zera selected_option_id (ON DELETE SET NULL) até em respostas
+        # ERRADAS de verdade — o que faria elas parecerem puladas por engano.
+        return a.is_timeout
 
     # ── Question map ─────────────────────────────────────────────────
     qids = list({a.question_id for a in all_answers})

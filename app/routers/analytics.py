@@ -62,6 +62,7 @@ async def quiz_summary(
 @router.get("/quiz/{quiz_id}/students")
 async def quiz_students(
     quiz_id: str,
+    assignment_id: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     me: User = Depends(get_current_user),):
     quiz_q = await db.execute(select(Quiz).where(Quiz.id == quiz_id))
@@ -71,9 +72,15 @@ async def quiz_students(
     if me.role not in (UserRole.ADMIN, UserRole.PROFESSOR):
         raise HTTPException(status_code=403, detail="Forbidden")
     _check_quiz_ownership(quiz, me)
-    att_q = await db.execute(
-        select(Attempt).where(Attempt.quiz_id == quiz.id, Attempt.status == "SUBMITTED")
-    )
+    # Um mesmo quiz pode estar atribuído a várias turmas diferentes (ou até
+    # ser feito fora de turma, pelo catálogo global). Sem filtrar por
+    # assignment_id, a lista de "alunos dessa turma" mostrava TODO MUNDO que
+    # já fez esse quiz em qualquer contexto — vazando alunos de outras
+    # turmas pra dentro da visão de uma turma específica.
+    filters = [Attempt.quiz_id == quiz.id, Attempt.status == "SUBMITTED"]
+    if assignment_id:
+        filters.append(Attempt.assignment_id == assignment_id)
+    att_q = await db.execute(select(Attempt).where(*filters))
     attempts = att_q.scalars().all()
 
     # Tempo ativo (soma de opened_at → answered_at por questão) em vez de
@@ -126,6 +133,7 @@ async def quiz_students(
 @router.get("/quiz/{quiz_id}/questions")
 async def quiz_question_analytics(
     quiz_id: str,
+    assignment_id: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     me: User = Depends(get_current_user),):
     quiz_q = await db.execute(select(Quiz).where(Quiz.id == quiz_id))
@@ -135,12 +143,15 @@ async def quiz_question_analytics(
     if me.role not in (UserRole.ADMIN, UserRole.PROFESSOR):
         raise HTTPException(status_code=403, detail="Forbidden")
     _check_quiz_ownership(quiz, me)
+    # Mesma correção do /students: sem isso, "questões problemáticas" de uma
+    # turma misturava respostas de alunos de outras turmas que fizeram o
+    # mesmo quiz.
+    subq_filters = [Attempt.quiz_id == quiz.id, Attempt.status == "SUBMITTED"]
+    if assignment_id:
+        subq_filters.append(Attempt.assignment_id == assignment_id)
     # 1 query com GROUP BY — sem N+1
     submitted_attempts_subq = (
-        select(Attempt.id).where(
-            Attempt.quiz_id == quiz.id,
-            Attempt.status == "SUBMITTED",
-        ).scalar_subquery()
+        select(Attempt.id).where(*subq_filters).scalar_subquery()
     )
     agg_q = await db.execute(
         select(

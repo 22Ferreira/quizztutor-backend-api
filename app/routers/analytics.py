@@ -138,6 +138,11 @@ async def quiz_question_analytics(
             Answer.question_id,
             func.count().label("total"),
             func.count().filter(Answer.is_correct == True).label("correct"),
+            # Acerto SEM nenhuma retentativa do modo prática — sinal real de
+            # dificuldade. Uma questão que só é acertada depois de várias
+            # tentativas conta "correct" igual a uma acertada de primeira,
+            # mas aqui fica visível a diferença pro professor.
+            func.count().filter((Answer.is_correct == True) & (Answer.practice_retries == 0)).label("first_try_correct"),
         )
         .where(Answer.attempt_id.in_(submitted_attempts_subq))
         .group_by(Answer.question_id)
@@ -149,6 +154,7 @@ async def quiz_question_analytics(
         row = stats.get(str(qq.id))
         total = row.total if row else 0
         correct = row.correct if row else 0
+        first_try_correct = row.first_try_correct if row else 0
         result.append({
             "question_id": str(qq.id),
             "order": qq.order,
@@ -158,6 +164,8 @@ async def quiz_question_analytics(
             "total_answers": total,
             "correct_answers": correct,
             "error_rate": round((total - correct) / total * 100, 1) if total else 0,
+            "first_try_correct": first_try_correct,
+            "first_try_rate": round(first_try_correct / total * 100, 1) if total else 0,
         })
     return result
 

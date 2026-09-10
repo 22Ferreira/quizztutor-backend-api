@@ -82,13 +82,21 @@ async def quiz_students(
     # esse intervalo todo como "tempo gasto", dando médias absurdas.
     attempt_ids = [a.id for a in attempts]
     active_duration_by_attempt: dict = {}
+    # Quantas questões esse aluno precisou de retentativa (modo prática) pra
+    # acertar — só existe quando a turma/atribuição tem modo prática ligado;
+    # em quiz feito fora de turma (catálogo global) fica sempre 0.
+    retry_questions_by_attempt: dict = {}
     if attempt_ids:
         qs_q = await db.execute(
             select(AttemptQuestionState).where(AttemptQuestionState.attempt_id.in_(attempt_ids))
         )
         states = qs_q.scalars().all()
         ans_q = await db.execute(select(Answer).where(Answer.attempt_id.in_(attempt_ids)))
-        answered_at_by_key = {(a.attempt_id, a.question_id): a.answered_at for a in ans_q.scalars().all()}
+        all_student_answers = ans_q.scalars().all()
+        answered_at_by_key = {(a.attempt_id, a.question_id): a.answered_at for a in all_student_answers}
+        for ans in all_student_answers:
+            if (getattr(ans, "practice_retries", 0) or 0) > 0:
+                retry_questions_by_attempt[ans.attempt_id] = retry_questions_by_attempt.get(ans.attempt_id, 0) + 1
         for qs in states:
             answered_at = answered_at_by_key.get((qs.attempt_id, qs.question_id))
             if qs.opened_at and answered_at:
@@ -110,6 +118,7 @@ async def quiz_students(
             "started_at": a.started_at.isoformat() if a.started_at else None,
             "submitted_at": a.submitted_at.isoformat() if a.submitted_at else None,
             "active_duration_sec": round(active_duration_by_attempt[a.id]) if active_duration_by_attempt.get(a.id) else None,
+            "questions_with_retry": retry_questions_by_attempt.get(a.id, 0),
         })
     return result
 
@@ -828,6 +837,7 @@ async def attempt_review(
             "is_correct": ans.is_correct if ans else None,
             "points_awarded": ans.points_awarded if ans else 0,
             "answered": ans is not None,
+            "practice_retries": (getattr(ans, "practice_retries", 0) or 0) if ans else 0,
         })
 
     duration_sec = round(active_seconds) if active_seconds > 0 else None

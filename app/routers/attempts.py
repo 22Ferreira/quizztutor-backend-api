@@ -337,6 +337,7 @@ async def current_question(
         time_allotted_seconds=time_allotted,
         attempt_expires_at=attempt.expires_at,
         hints_used=state.hints_used,
+        has_hints=bool(qq.hint_1 or qq.hint_2 or qq.hint_3),
         total_questions=len(order),
         quiz_title=quiz_meta.title if quiz_meta else None,
         show_correct_immediate=show_correct,

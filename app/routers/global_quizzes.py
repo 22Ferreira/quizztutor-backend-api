@@ -158,6 +158,11 @@ async def revoke_global(
 
     req.status = GlobalQuizRequestStatus.REVOKED
     req.is_active = False
+    # Sem isso, uma nota antiga (de uma aprovação/rejeição anterior) ficava
+    # "grudada" no pedido depois de revogado, mostrando um aviso que
+    # contradizia o status atual (ex: nota falando em aprovação junto com
+    # o badge "Revogado").
+    req.review_note = None
 
     await audit(
         db,

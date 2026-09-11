@@ -22,7 +22,30 @@ def _make_slug(title: str, req_id: str) -> str:
 async def list_requests(status: str = "PENDING", db: AsyncSession = Depends(get_db), me: User = Depends(get_current_user)):
     st = status.upper()
     q = await db.execute(select(GlobalQuizRequest).where(GlobalQuizRequest.status == st))
-    return [ {"id": str(r.id), "quiz_id": str(r.quiz_id), "status": r.status, "requested_at": r.requested_at, "is_active": r.is_active} for r in q.scalars().all() ]
+    reqs = q.scalars().all()
+    if not reqs:
+        return []
+
+    # Sem isso o admin via só um ID de request — nem o título do quiz nem
+    # quem pediu, tendo que aprovar/rejeitar "às cegas".
+    requester_ids = {r.requested_by for r in reqs if r.requested_by}
+    names_by_id: dict = {}
+    if requester_ids:
+        uq = await db.execute(select(User).where(User.id.in_(requester_ids)))
+        names_by_id = {u.id: u.name for u in uq.scalars().all()}
+
+    return [
+        {
+            "id": str(r.id),
+            "quiz_id": str(r.quiz_id),
+            "quiz_title": r.quiz.title if r.quiz else None,
+            "status": r.status,
+            "requested_at": r.requested_at,
+            "requested_by_name": names_by_id.get(r.requested_by),
+            "is_active": r.is_active,
+        }
+        for r in reqs
+    ]
 
 @router.post("/{request_id}/approve")
 async def approve(request_id: str, payload: AdminReviewIn, db: AsyncSession = Depends(get_db), me: User = Depends(get_current_user)):

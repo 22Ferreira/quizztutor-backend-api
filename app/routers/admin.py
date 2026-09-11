@@ -24,6 +24,7 @@ from app.models.attempt import Attempt, AttemptStatus
 from app.models.audit import AuditLog, TutorInteraction
 from app.models.chat import ChatMessage
 from app.models.live_session import LiveSession, LiveSessionStatus
+from app.models.global_quiz import GlobalQuizRequest, GlobalQuizRequestStatus
 from app.schemas.users import UserOut
 from app.services.audit import audit
 
@@ -179,6 +180,17 @@ async def platform_stats(db: AsyncSession = Depends(get_db)):
         select(func.count(LiveSession.id)).where(LiveSession.status.in_([LiveSessionStatus.LOBBY, LiveSessionStatus.RUNNING]))
     )).scalar() or 0
 
+    # Cards "de atenção" — pedem uma ação do admin, não são só estatística.
+    pending_approvals = (await db.execute(
+        select(func.count(GlobalQuizRequest.id)).where(GlobalQuizRequest.status == GlobalQuizRequestStatus.PENDING)
+    )).scalar() or 0
+    banned_users = (await db.execute(
+        select(func.count(User.id)).where(User.banned_until.is_not(None), User.banned_until > datetime.now(timezone.utc))
+    )).scalar() or 0
+    draft_quizzes = (await db.execute(select(func.count(Quiz.id)).where(Quiz.status == QuizStatus.DRAFT))).scalar() or 0
+    week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+    new_users_week = (await db.execute(select(func.count(User.id)).where(User.created_at >= week_ago))).scalar() or 0
+
     user_growth      = await _series_by_month(db, User.created_at, months=6)
     attempts_by_day  = await _series_by_day(db, Attempt.submitted_at, filters=[Attempt.status == AttemptStatus.SUBMITTED], days=7)
     quizzes_by_week  = await _series_by_week(db, Quiz.created_at, weeks=6)
@@ -193,6 +205,10 @@ async def platform_stats(db: AsyncSession = Depends(get_db)):
         "total_attempts": total_attempts,
         "tutor_interactions": tutor_count,
         "live_sessions_active": live_active,
+        "pending_approvals": pending_approvals,
+        "banned_users": banned_users,
+        "draft_quizzes": draft_quizzes,
+        "new_users_week": new_users_week,
         "user_growth": user_growth,
         "attempts_by_day": attempts_by_day,
         "quizzes_by_week": quizzes_by_week,

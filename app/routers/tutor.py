@@ -25,6 +25,7 @@ from app.ai.decision_tree.engine import evaluate, build_tutor_context
 from app.ai.llm.manager import llm_manager
 from app.tutor.service import TutorService
 from app.tutor.schemas import TutorContext
+from app.tutor.leak_guard import response_leaks_answer, SAFE_REDIRECT_MESSAGE
 from app.ai.rag.retriever import retrieve as rag_retrieve
 from app.ai.llm.prompt_builder import (
     build_tutor_messages,
@@ -280,6 +281,17 @@ async def ask_tutor(
             evaluation_mode=evaluation_mode,
         )
         response_content = result.message
+
+        # Rede de segurança: a instrução no prompt pra nunca revelar a
+        # resposta é só instrução, a IA já vazou de verdade em testes ao
+        # vivo (inclusive escalando demais em pedidos repetidos de dica).
+        # Essa checagem roda em código, comparando com o texto literal da
+        # alternativa correta — que nunca foi mandado pra IA — então não
+        # depende dela seguir regra nenhuma.
+        correct_texts = [o.text for o in qq.options if o.is_correct]
+        if response_leaks_answer(response_content, correct_texts):
+            logger.warning(f"[TutorGuard] Resposta bloqueada por vazar a alternativa correta — question_id={qq.id}")
+            response_content = SAFE_REDIRECT_MESSAGE
 
     else:
         response_content = decision.message_template or "Como posso ajudá-lo com esta questão?"

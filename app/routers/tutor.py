@@ -124,7 +124,14 @@ async def ask_tutor(
     # --- Carregar tutor config ---
     tc: TutorConfig | None = quiz.tutor_config
     if not tc or not tc.enabled:
-        raise HTTPException(status_code=400, detail="Tutor não habilitado para este questionário")
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "O tutor de IA não está ativado para este questionário. "
+                "Fale com seu professor para ativar essa função nas "
+                "configurações do questionário."
+            ),
+        )
 
     # --- Carregar questão atual ---
     qq: QuizQuestion | None = None

@@ -9,6 +9,7 @@ import logging
 import os
 
 import httpx
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
 
 from app.ai.providers.base import BaseLLMProvider, LLMMessage, LLMResponse
 from app.ai.providers.openai_compat import get_http_client
@@ -17,6 +18,16 @@ from app.ai.providers.openai_compat import get_http_client
 logger = logging.getLogger(__name__)
 
 GEMINI_CHAT_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    # Só vale a pena tentar de novo em falha PASSAGEIRA (rede, erro 5xx do
+    # servidor). Retentar um 429 (limite de uso estourado) ou 404 (modelo
+    # errado) na hora é inútil — vai falhar de novo do mesmo jeito e só
+    # desperdiça mais uma tentativa contra a cota já esgotada.
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code >= 500
+    return isinstance(exc, httpx.TransportError)
 
 
 class GeminiProvider(BaseLLMProvider):
@@ -28,6 +39,25 @@ class GeminiProvider(BaseLLMProvider):
 
     def _get_model(self) -> str:
         return self.config.get("models", {}).get("default", "gemini-3.6-flash")
+
+    # Sem isso, uma falha passageira (blip de rede, erro 5xx momentâneo) já
+    # derrubava o Gemini na primeira tentativa — o provedor OpenAI-compatible
+    # (Groq/OpenRouter) já tinha essa mesma proteção, o Gemini não. Fica
+    # isolado numa função própria (que precisa RAISAR o erro, não devolver
+    # um resultado) porque é assim que o @retry consegue interceptar e
+    # tentar de novo — devolver um LLMResponse aqui dentro faria o @retry
+    # nunca disparar.
+    @retry(
+        stop=stop_after_attempt(2),
+        wait=wait_exponential(multiplier=0.5, min=0.5, max=3),
+        retry=retry_if_exception(_is_retryable),
+        reraise=True,
+    )
+    async def _post(self, url: str, payload: dict, params_url: dict, timeout: float) -> dict:
+        client = get_http_client()
+        r = await client.post(url, json=payload, params=params_url, timeout=timeout)
+        r.raise_for_status()
+        return r.json()
 
     async def chat(self, messages: list[LLMMessage], **kwargs) -> LLMResponse:
         api_key = self._get_api_key()
@@ -62,10 +92,7 @@ class GeminiProvider(BaseLLMProvider):
         params_url = {"key": api_key}
 
         try:
-            client = get_http_client()
-            r = await client.post(url, json=payload, params=params_url, timeout=timeout)
-            r.raise_for_status()
-            data = r.json()
+            data = await self._post(url, payload, params_url, timeout)
             content = data["candidates"][0]["content"]["parts"][0]["text"]
             return LLMResponse(content=content, provider=self.name, model=model, success=True)
         except httpx.HTTPStatusError as e:

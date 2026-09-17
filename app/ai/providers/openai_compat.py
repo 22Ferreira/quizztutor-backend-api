@@ -36,7 +36,10 @@ class OpenAICompatProvider(BaseLLMProvider):
     def _resolve_base_url(self) -> str:
         url_env = self.config.get("base_url_env")
         if url_env:
-            return os.environ.get(url_env, self.config.get("base_url_default", "http://localhost:11434"))
+            # os.environ.get só usa o default se a variável não existir — se
+            # ela existir só vazia (ex: "OLLAMA_BASE_URL=" no .env), isso
+            # retornava "" e gerava uma URL relativa inválida.
+            return os.environ.get(url_env) or self.config.get("base_url_default", "http://localhost:11434")
         return self.config.get("base_url", "")
 
     def _get_model(self) -> str:
@@ -51,7 +54,11 @@ class OpenAICompatProvider(BaseLLMProvider):
         params = self._get_params(**kwargs)
         timeout = self.config.get("timeout_seconds", 30)
 
-        url = f"{base_url.rstrip('/')}/v1/chat/completions"
+        # Algumas base_url já vêm com "/v1" no final (Groq, OpenRouter),
+        # outras não (Ollama) — sem essa checagem, as que já tinham
+        # viravam ".../v1/v1/chat/completions" e davam 404.
+        base = base_url.rstrip('/')
+        url = f"{base}/chat/completions" if base.endswith("/v1") else f"{base}/v1/chat/completions"
         headers = {"Content-Type": "application/json"}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"

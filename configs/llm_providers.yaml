@@ -72,9 +72,13 @@ providers:
     base_url: "https://generativelanguage.googleapis.com"
     api_key_env: "GEMINI_API_KEY"
     models:
-      default: "gemini-2.5-flash"    # Modelo atual — 1.5 foi descontinuado
+      # 2.5-flash parou de ficar disponível pra contas novas (a própria API
+      # retornou 404 recomendando o substituto) — a Google está mudando os
+      # modelos disponíveis com bastante frequência, vale conferir de novo
+      # em https://ai.google.dev/gemini-api/docs/models se voltar a falhar.
+      default: "gemini-3.6-flash"
       alternatives:
-        - "gemini-2.5-flash-lite"    # Mais rápido/barato, um pouco menos capaz
+        - "gemini-2.5-flash"         # Pode voltar a funcionar em contas antigas
         - "gemini-2.5-pro"           # Mais capaz (free com limites menores)
     parameters:
       temperature: 0.3

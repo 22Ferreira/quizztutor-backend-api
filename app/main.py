@@ -93,8 +93,29 @@ async def _startup():
     if settings.ENV == "dev":
         from app.db.seed import seed_mock_data
         await seed_mock_data()
+    await _load_secrets_into_env()
     # Background task: detectar alunos desconectados por timeout de heartbeat
     asyncio.create_task(_disconnect_checker())
+
+
+async def _load_secrets_into_env():
+    """
+    Copia as chaves de API salvas pelo admin (banco, cifradas) para
+    os.environ — assim o código dos provedores de IA (que só sabe ler
+    variável de ambiente, sem tocar em nada dele) já enxerga a chave
+    certa sem precisar reiniciar o servidor depois de salvar pela tela.
+    """
+    import os
+    from sqlalchemy import select
+    from app.models.system_secret import SystemSecret
+    from app.utils.secrets_crypto import decrypt_secret
+
+    async with AsyncSessionLocal() as db:
+        rows = (await db.execute(select(SystemSecret))).scalars().all()
+        for row in rows:
+            plain = decrypt_secret(row.encrypted_value)
+            if plain:
+                os.environ[row.key_name] = plain
 
 
 # ── Routers ───────────────────────────────────────────────────────────────────

@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     TUTOR_ENGINE: str = "API_DIRECT"
     AI_PROVIDER: str = ""
 
+    # Chave mestra que cifra/decifra as API keys de IA salvas pelo admin
+    # (app/utils/secrets_crypto.py). Sem isso, o admin não consegue salvar
+    # chaves pela tela — precisa gerar uma vez e colocar no .env do servidor.
+    SECRETS_ENCRYPTION_KEY: str = ""
+
     # ── RAG ──
     RAG_CORPUS_DIR: str = ""
     RAG_MAX_CHUNKS: int = 3

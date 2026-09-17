@@ -3,7 +3,7 @@ admin.py — Área administrativa completa
 Todos os endpoints são protegidos por require_roles("ADMIN").
 """
 from __future__ import annotations
-import io, csv, secrets, string
+import io, csv, os, secrets, string
 from datetime import datetime, timezone, timedelta
 from typing import Any
 from uuid import UUID
@@ -25,6 +25,8 @@ from app.models.audit import AuditLog, TutorInteraction
 from app.models.chat import ChatMessage
 from app.models.live_session import LiveSession, LiveSessionStatus
 from app.models.global_quiz import GlobalQuizRequest, GlobalQuizRequestStatus
+from app.models.system_secret import SystemSecret
+from app.utils.secrets_crypto import encrypt_secret, decrypt_secret, mask_secret
 from app.schemas.users import UserOut
 from app.services.audit import audit
 
@@ -722,6 +724,87 @@ async def patch_config(
     await audit(db, me.id, "ADMIN_PATCH_CONFIG", "SystemConfig", None, after=updated)
     await db.commit()
     return {"message": "ok", "updated": updated, "config": _SYSTEM_CONFIG}
+
+# ──────────────────────────────────────────────────────────────────────────────
+# AI PROVIDER KEYS — chaves de IA (Groq, Gemini) configuráveis pelo admin,
+# em vez de precisar editar o .env do servidor. Guardadas cifradas
+# (app/utils/secrets_crypto.py); o valor real nunca é devolvido pra tela.
+# ──────────────────────────────────────────────────────────────────────────────
+
+_ALLOWED_AI_KEYS = {
+    "GROQ_API_KEY": "Groq",
+    "GEMINI_API_KEY": "Gemini",
+}
+
+class SetAiKeyRequest(BaseModel):
+    api_key: str
+
+def _require_valid_key_name(key_name: str) -> None:
+    if key_name not in _ALLOWED_AI_KEYS:
+        raise HTTPException(status_code=404, detail="Provedor desconhecido")
+
+@router.get("/ai-keys")
+async def list_ai_keys(db: AsyncSession = Depends(get_db)):
+    rows = (await db.execute(select(SystemSecret))).scalars().all()
+    by_name = {r.key_name: r for r in rows}
+    out = {}
+    for key_name, label in _ALLOWED_AI_KEYS.items():
+        row = by_name.get(key_name)
+        if not row:
+            out[key_name] = {"label": label, "configured": False}
+            continue
+        plain = decrypt_secret(row.encrypted_value)
+        out[key_name] = {
+            "label": label,
+            "configured": plain is not None,
+            "masked": mask_secret(plain) if plain else None,
+            "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        }
+    return out
+
+@router.put("/ai-keys/{key_name}")
+async def set_ai_key(
+    key_name: str,
+    payload: SetAiKeyRequest,
+    me: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    _require_valid_key_name(key_name)
+    api_key = payload.api_key.strip()
+    if not api_key:
+        raise HTTPException(status_code=400, detail="Chave vazia")
+
+    encrypted = encrypt_secret(api_key)
+    row = (await db.execute(select(SystemSecret).where(SystemSecret.key_name == key_name))).scalar_one_or_none()
+    if row:
+        row.encrypted_value = encrypted
+        row.updated_by = me.id
+    else:
+        row = SystemSecret(key_name=key_name, encrypted_value=encrypted, updated_by=me.id)
+        db.add(row)
+
+    # Efeito imediato — o LLMManager só olha os.environ, então isso ativa
+    # a chave nova agora, sem precisar reiniciar o servidor.
+    os.environ[key_name] = api_key
+
+    await audit(db, me.id, "ADMIN_SET_AI_KEY", "SystemSecret", None, after={"key_name": key_name})
+    await db.commit()
+    return {"label": _ALLOWED_AI_KEYS[key_name], "configured": True, "masked": mask_secret(api_key)}
+
+@router.delete("/ai-keys/{key_name}")
+async def delete_ai_key(
+    key_name: str,
+    me: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    _require_valid_key_name(key_name)
+    row = (await db.execute(select(SystemSecret).where(SystemSecret.key_name == key_name))).scalar_one_or_none()
+    if row:
+        await db.delete(row)
+        await audit(db, me.id, "ADMIN_DELETE_AI_KEY", "SystemSecret", None, after={"key_name": key_name})
+        await db.commit()
+    os.environ.pop(key_name, None)
+    return {"label": _ALLOWED_AI_KEYS[key_name], "configured": False}
 
 # ──────────────────────────────────────────────────────────────────────────────
 # REPORTS

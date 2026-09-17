@@ -6,6 +6,7 @@ from .attempt import Attempt, AttemptStatus, AttemptQuestionState, Answer
 from .chat import ChatThread, ChatMessage
 from .audit import AuditLog, EventLog, TutorInteraction
 from .password_reset import PasswordResetToken
+from .system_secret import SystemSecret
 
 from .global_quiz import GlobalQuizRequest, GlobalQuizRequestStatus
 from .live_session import (

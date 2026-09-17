@@ -20,6 +20,7 @@ Duas checagens independentes:
    distintos de monólogo interno (não palavras comuns tipo "the", que
    apareceriam normalmente numa aula de inglês, por exemplo).
 """
+import random
 import re
 import unicodedata
 
@@ -133,9 +134,27 @@ def response_looks_like_leaked_reasoning(response_text: str) -> bool:
     return len(hits) >= _ENGLISH_TELLS_MIN_HITS
 
 
-SAFE_REDIRECT_MESSAGE = (
+# Lista, não string única: se o bloqueio disparar 2+ vezes na mesma
+# conversa (acontece — visto em produção), repetir a MESMA frase parece
+# resposta travada/robótica, exatamente o tipo de coisa que o resto do
+# prompt tenta evitar. get_safe_redirect_message() varia a escolha.
+_SAFE_REDIRECT_MESSAGES = [
     "Opa, percebi que ia acabar te entregando a resposta pronta demais — "
     "vamos por outro caminho. Pensa nas características que já comparamos: "
     "qual delas combina com o que você já sabe sobre o assunto? Você está "
-    "mais perto do que imagina."
-)
+    "mais perto do que imagina.",
+    "Quase fui longe demais aí! Deixa eu voltar um passo: das características "
+    "que a gente já viu, qual você acha que se encaixa melhor no que a "
+    "questão está pedindo?",
+    "Vou puxar o freio antes de entregar de mais — pensa no que já "
+    "conversamos até aqui e tenta relacionar com as alternativas. Qual "
+    "delas parece fazer mais sentido pra você agora?",
+]
+
+
+def get_safe_redirect_message() -> str:
+    return random.choice(_SAFE_REDIRECT_MESSAGES)
+
+
+# Mantido por compatibilidade — prefira get_safe_redirect_message().
+SAFE_REDIRECT_MESSAGE = _SAFE_REDIRECT_MESSAGES[0]

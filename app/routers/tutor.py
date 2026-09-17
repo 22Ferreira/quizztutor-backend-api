@@ -25,7 +25,7 @@ from app.ai.decision_tree.engine import evaluate, build_tutor_context
 from app.ai.llm.manager import llm_manager
 from app.tutor.service import TutorService
 from app.tutor.schemas import TutorContext
-from app.tutor.leak_guard import response_leaks_answer, response_looks_like_leaked_reasoning, SAFE_REDIRECT_MESSAGE
+from app.tutor.leak_guard import response_leaks_answer, response_looks_like_leaked_reasoning, get_safe_redirect_message
 from app.ai.rag.retriever import retrieve as rag_retrieve
 from app.ai.llm.prompt_builder import (
     build_tutor_messages,
@@ -298,14 +298,14 @@ async def ask_tutor(
         correct_texts = [o.text for o in qq.options if o.is_correct]
         if response_leaks_answer(response_content, correct_texts):
             logger.warning(f"[TutorGuard] Resposta bloqueada por vazar a alternativa correta — question_id={qq.id}")
-            response_content = SAFE_REDIRECT_MESSAGE
+            response_content = get_safe_redirect_message()
         elif response_looks_like_leaked_reasoning(response_content):
             # Raciocínio interno do modelo vazando em inglês, sem tag
             # nenhuma pra identificar (a limpeza de <think> em
             # openai_compat.py não pega isso) — mesma gravidade do caso
             # acima, bloqueado do mesmo jeito.
             logger.warning(f"[TutorGuard] Resposta bloqueada por parecer raciocínio interno vazando — question_id={qq.id}")
-            response_content = SAFE_REDIRECT_MESSAGE
+            response_content = get_safe_redirect_message()
 
     else:
         response_content = decision.message_template or "Como posso ajudá-lo com esta questão?"

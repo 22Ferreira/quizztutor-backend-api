@@ -5,12 +5,31 @@ Usa httpx.AsyncClient global (singleton) para reutilizar conexões.
 """
 import logging
 import os
+import re
 import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
 
 from app.ai.providers.base import BaseLLMProvider, LLMMessage, LLMResponse
 
 logger = logging.getLogger(__name__)
+
+# Alguns modelos "raciocinadores" (ex: gpt-oss da Groq, DeepSeek-R1 e
+# variantes via OpenRouter) escrevem o próprio pensamento interno dentro
+# do texto da resposta, em tags <think>...</think> — isso pode incluir a
+# resposta certa da questão dita sem rodeio nenhum, em inglês, fora do
+# personagem do tutor. O parâmetro certo (reasoning_format) evita isso
+# na origem pra quem suporta, mas isso aqui é uma rede de segurança pra
+# qualquer provedor/modelo que vaze raciocínio desse jeito mesmo assim —
+# ex: o roteador automático da OpenRouter (openrouter/free) pode cair
+# num modelo raciocinador sem a gente escolher isso.
+_THINK_TAG_RE = re.compile(r"<think>.*?</think>", re.IGNORECASE | re.DOTALL)
+_UNCLOSED_THINK_RE = re.compile(r"<think>.*", re.IGNORECASE | re.DOTALL)
+
+
+def _strip_reasoning(content: str) -> str:
+    cleaned = _THINK_TAG_RE.sub("", content)
+    cleaned = _UNCLOSED_THINK_RE.sub("", cleaned)  # <think> sem fechar (resposta cortada no meio)
+    return cleaned.strip()
 
 
 def _is_retryable(exc: BaseException) -> bool:
@@ -96,10 +115,11 @@ class OpenAICompatProvider(BaseLLMProvider):
             "temperature": params.get("temperature", 0.3),
             "max_tokens": params.get("max_tokens", 1024),
         }
+        payload.update(self.config.get("extra_payload", {}))
 
         try:
             data = await self._post(url, payload, headers, timeout)
-            content = data["choices"][0]["message"]["content"]
+            content = _strip_reasoning(data["choices"][0]["message"]["content"] or "")
             if not content:
                 logger.warning(f"[{self.name}] Resposta vazia (sem erro HTTP) — modelo: {model}")
                 return LLMResponse(content="", provider=self.name, model=model, success=False, error="Resposta vazia do provedor")

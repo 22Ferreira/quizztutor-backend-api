@@ -55,6 +55,12 @@ providers:
       temperature: 0.3
       max_tokens: 1024
       top_p: 0.9
+    # openai/gpt-oss-20b é um modelo "raciocinador" — sem isso, ele
+    # mistura o pensamento interno (em inglês, e que pode citar a
+    # resposta certa sem rodeio nenhum) dentro do próprio texto da
+    # resposta. "hidden" faz a Groq não devolver esse raciocínio junto.
+    extra_payload:
+      reasoning_format: "hidden"
     timeout_seconds: 20               # Reduzido: não deixar a cadeia de
                                        # fallback inteira refém de um
                                        # provedor lento (ver comentário

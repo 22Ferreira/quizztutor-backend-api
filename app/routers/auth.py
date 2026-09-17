@@ -32,7 +32,7 @@ async def me(user: User = Depends(get_current_user)):
 @router.post("/login", response_model=TokenResponse)
 async def login(payload: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)):
     ip = get_real_ip(request)  # IP real (funciona atrás de Nginx)
-    if not rate_limiter.hit(ip, "login", settings.RL_LOGIN_PER_MIN):
+    if not await rate_limiter.hit(ip, "login", settings.RL_LOGIN_PER_MIN):
         raise HTTPException(status_code=429, detail="Too many requests")
     q = await db.execute(select(User).where(User.email == payload.email))
     user = q.scalar_one_or_none()

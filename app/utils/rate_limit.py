@@ -24,7 +24,11 @@ class InMemoryRateLimiter:
     def __init__(self):
         self._buckets: Dict[Tuple[str, str], _Bucket] = {}
 
-    def hit(self, key: str, action: str, limit: int, window_seconds: int = 60) -> bool:
+    # async só pra manter a mesma interface do RedisRateLimiter (quem
+    # chama sempre dá "await", não precisa saber qual dos dois está
+    # rodando por trás) — não tem I/O de verdade aqui, então não
+    # bloqueia nada.
+    async def hit(self, key: str, action: str, limit: int, window_seconds: int = 60) -> bool:
         now = time()
         k = (key, action)
         b = self._buckets.get(k)
@@ -45,28 +49,18 @@ class RedisRateLimiter:
         import redis.asyncio as aioredis
         self._redis = aioredis.from_url(redis_url, decode_responses=True)
 
-    def hit(self, key: str, action: str, limit: int, window_seconds: int = 60) -> bool:
-        """
-        Síncrono por compatibilidade com o código existente.
-        Usa run_until_complete internamente para não quebrar a interface.
-        Em produção real, prefira chamar hit_async diretamente.
-        """
-        import asyncio
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # no contexto async (FastAPI) — criar task segura
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                    future = pool.submit(asyncio.run, self._async_hit(key, action, limit, window_seconds))
-                    return future.result(timeout=1)
-            else:
-                return loop.run_until_complete(self._async_hit(key, action, limit, window_seconds))
-        except Exception as e:
-            logger.warning(f"[RateLimit] Redis falhou, liberando request: {e}")
-            return True  # fail-open: não bloquear por falha do Redis
-
-    async def _async_hit(self, key: str, action: str, limit: int, window_seconds: int) -> bool:
+    async def hit(self, key: str, action: str, limit: int, window_seconds: int = 60) -> bool:
+        # Antes disso, cada chamada criava uma THREAD nova com um EVENT
+        # LOOP novo (via asyncio.run) só pra "fingir" ser síncrono — mas
+        # o cliente Redis (self._redis) é um único objeto assíncrono
+        # compartilhado, e conexão/socket assíncrono não sobrevive a
+        # trocar de loop. Resultado: "Event loop is closed" em toda
+        # chamada, sempre caindo no fail-open (return True) do except
+        # abaixo — ou seja, o rate limit nunca esteve funcionando de
+        # verdade em produção. Agora que os 3 pontos que chamam isso
+        # (tutor, início de tentativa, login) já rodam dentro de uma
+        # rota async do FastAPI, dá pra usar o MESMO loop com um await
+        # direto — sem criar loop novo, sem gambiarra de thread.
         rkey = f"rl:{action}:{key}"
         try:
             pipe = self._redis.pipeline()
@@ -77,7 +71,7 @@ class RedisRateLimiter:
             return count <= limit
         except Exception as e:
             logger.warning(f"[RateLimit] Redis erro: {e}")
-            return True  # fail-open
+            return True  # fail-open: não bloquear por falha do Redis
 
 
 # ──────────────────────────────────────────────

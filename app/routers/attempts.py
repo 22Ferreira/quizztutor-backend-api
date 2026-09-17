@@ -54,7 +54,7 @@ async def start_attempt(
     logger.info(f"[START] payload={payload.model_dump()} user={me.id if me else None}")
     ip = request.client.host if request.client else "unknown"
     key = str(me.id) if me else (payload.guest_email or ip)
-    if not rate_limiter.hit(key, "start_attempt", settings.RL_ATTEMPT_START_PER_MIN):
+    if not await rate_limiter.hit(key, "start_attempt", settings.RL_ATTEMPT_START_PER_MIN):
         raise HTTPException(status_code=429, detail="Too many requests")
 
     # Resolve assignment/quiz

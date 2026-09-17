@@ -109,7 +109,7 @@ async def ask_tutor(
     # --- Rate limiting ---
     ip = request.client.host if request.client else "unknown"
     key = str(me.id) if me else ip
-    if not rate_limiter.hit(key, "tutor_ask", settings.RL_TUTOR_PER_MIN):
+    if not await rate_limiter.hit(key, "tutor_ask", settings.RL_TUTOR_PER_MIN):
         raise HTTPException(status_code=429, detail="Muitas solicitações. Aguarde um momento.")
 
     # --- Carregar tentativa ---

@@ -49,6 +49,13 @@ class Settings(BaseSettings):
     # chaves pela tela — precisa gerar uma vez e colocar no .env do servidor.
     SECRETS_ENCRYPTION_KEY: str = ""
 
+    # Limiar do detector de "pergunta fora do escopo" (app/services/guardrails.py)
+    # — fração mínima de palavras em comum entre a pergunta do aluno e o
+    # contexto da questão pra ser considerada "dentro do assunto". Abaixo
+    # disso, o tutor bloqueia sem gastar chamada de IA. Faltava esse valor
+    # no config, o que quebrava TODA chamada ao tutor com AttributeError.
+    TUTOR_SIMILARITY_THRESHOLD: float = 0.15
+
     # ── RAG ──
     RAG_CORPUS_DIR: str = ""
     RAG_MAX_CHUNKS: int = 3

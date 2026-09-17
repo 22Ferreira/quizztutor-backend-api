@@ -138,17 +138,21 @@ def response_looks_like_leaked_reasoning(response_text: str) -> bool:
 # conversa (acontece — visto em produção), repetir a MESMA frase parece
 # resposta travada/robótica, exatamente o tipo de coisa que o resto do
 # prompt tenta evitar. get_safe_redirect_message() varia a escolha.
+#
+# IMPORTANTE: nenhuma frase aqui pode pressupor que já houve conversa
+# antes ("as características que já comparamos", "o que já vimos") — o
+# bloqueio pode disparar logo na PRIMEIRA resposta (visto em produção: a
+# IA tentou explicar conteúdo técnico em cima de um simples "boa tarde"
+# e vazou), e uma frase que referencia contexto inexistente fica sem
+# nexo nenhum pro aluno, parecendo bug em vez de segurança funcionando.
 _SAFE_REDIRECT_MESSAGES = [
-    "Opa, percebi que ia acabar te entregando a resposta pronta demais — "
-    "vamos por outro caminho. Pensa nas características que já comparamos: "
-    "qual delas combina com o que você já sabe sobre o assunto? Você está "
-    "mais perto do que imagina.",
-    "Quase fui longe demais aí! Deixa eu voltar um passo: das características "
-    "que a gente já viu, qual você acha que se encaixa melhor no que a "
-    "questão está pedindo?",
-    "Vou puxar o freio antes de entregar de mais — pensa no que já "
-    "conversamos até aqui e tenta relacionar com as alternativas. Qual "
-    "delas parece fazer mais sentido pra você agora?",
+    "Opa, quase fui longe demais aí! Vamos com calma: me conta o que "
+    "você já sabe sobre o assunto da questão, e pensamos juntos a "
+    "partir daí.",
+    "Deixa eu voltar um passo antes de ir longe demais — o que você já "
+    "entende sobre o tema dessa questão? Vamos por aí.",
+    "Vou puxar o freio antes de entregar de mais. Me conta o que você "
+    "já sabe sobre o assunto, e seguimos o raciocínio juntos.",
 ]
 
 

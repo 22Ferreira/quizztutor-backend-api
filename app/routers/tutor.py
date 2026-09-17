@@ -297,14 +297,23 @@ async def ask_tutor(
         # depende dela seguir regra nenhuma.
         correct_texts = [o.text for o in qq.options if o.is_correct]
         if response_leaks_answer(response_content, correct_texts):
-            logger.warning(f"[TutorGuard] Resposta bloqueada por vazar a alternativa correta — question_id={qq.id}")
+            # Log do texto bloqueado (truncado) é essencial aqui — sem
+            # isso não dá pra saber depois se foi vazamento de verdade
+            # ou falso positivo do filtro, só especular.
+            logger.warning(
+                f"[TutorGuard] Resposta bloqueada por vazar a alternativa correta — "
+                f"question_id={qq.id} | texto_bloqueado={response_content[:400]!r}"
+            )
             response_content = get_safe_redirect_message()
         elif response_looks_like_leaked_reasoning(response_content):
             # Raciocínio interno do modelo vazando em inglês, sem tag
             # nenhuma pra identificar (a limpeza de <think> em
             # openai_compat.py não pega isso) — mesma gravidade do caso
             # acima, bloqueado do mesmo jeito.
-            logger.warning(f"[TutorGuard] Resposta bloqueada por parecer raciocínio interno vazando — question_id={qq.id}")
+            logger.warning(
+                f"[TutorGuard] Resposta bloqueada por parecer raciocínio interno vazando — "
+                f"question_id={qq.id} | texto_bloqueado={response_content[:400]!r}"
+            )
             response_content = get_safe_redirect_message()
 
     else:

@@ -99,11 +99,17 @@ providers:
     base_url: "https://openrouter.ai/api/v1"
     api_key_env: "OPENROUTER_API_KEY"
     models:
-      default: "meta-llama/llama-3.1-8b-instruct:free"
+      # "openrouter/free" é o roteador automático deles: a cada chamada
+      # ele escolhe sozinho um modelo gratuito disponível no momento.
+      # Modelos gratuitos específicos (ex: meta-llama/llama-3.1-8b-
+      # instruct:free) saem da lista de graça sem aviso com frequência —
+      # já vimos isso acontecer com Groq e Gemini nesta mesma sessão —
+      # então usar o roteador evita ficar quebrando de novo por causa
+      # disso.
+      default: "openrouter/free"
       alternatives:
+        - "meta-llama/llama-3.3-70b-instruct:free"
         - "google/gemma-2-9b-it:free"
-        - "mistralai/mistral-7b-instruct:free"
-        - "microsoft/phi-3-mini-128k-instruct:free"
         - "qwen/qwen-2-7b-instruct:free"
     parameters:
       temperature: 0.3

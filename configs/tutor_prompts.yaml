@@ -305,11 +305,8 @@ messages:
     sendo estudado agora? Posso te ajudar com a questão atual!
 
   evaluation_restricted: >
-    Este questionário está em modo Avaliação formal, por isso não posso
-    dar dicas ou explicações agora — essa restrição é proposital, faz
-    parte da avaliação valendo nota. Confie no que você estudou! Se
-    achar que isso não deveria estar acontecendo, peça ao seu professor
-    para revisar a configuração do questionário.
+    Avaliação não tem dica nem ajuda, por padrão. Fale com o professor
+    para mudar a configuração e liberar a ajuda do tutor.
 
   max_hints_reached: >
     Você já utilizou todas as dicas disponíveis para esta questão.

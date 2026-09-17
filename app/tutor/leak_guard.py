@@ -10,14 +10,15 @@ roda DEPOIS da IA responder, sem depender dela seguir regra nenhuma.
 Duas checagens independentes:
 1. response_leaks_answer(): compara o texto gerado com o texto literal
    da alternativa correta (nunca enviado pra IA). Usa correspondência
-   por trecho (n-grama), não só o texto inteiro da alternativa — a IA
-   raramente repete uma alternativa inteira palavra por palavra, mas já
-   vazou um TRECHO dela (ex: "vetor de caminho" dentro de uma alternativa
-   maior) várias vezes em teste real.
+   por trecho (n-grama) que exige palavras de CONTEÚDO, não só qualquer
+   trecho de 3 palavras — "a camada de" apareceria em qualquer resposta
+   sobre camadas de rede e não indicaria vazamento nenhum por si só.
 2. response_looks_like_leaked_reasoning(): detecta raciocínio interno
    vazando em inglês (o tutor só deveria responder em português) — nem
    sempre vem marcado com <think>, às vezes é só prosa solta tipo
-   "Okay, let's see, the student is...".
+   "Okay, let's see, the student is...". Usa só marcadores bem
+   distintos de monólogo interno (não palavras comuns tipo "the", que
+   apareceriam normalmente numa aula de inglês, por exemplo).
 """
 import re
 import unicodedata
@@ -39,6 +40,24 @@ _MIN_LEN_FOR_MATCH = 6
 # real (1-2 palavras soltas geram falso positivo fácil demais).
 _MIN_NGRAM_WORDS = 3
 
+# Palavras de função em português — um trecho composto majoritariamente
+# por elas (ex: "a camada de") é genérico demais pra indicar vazamento,
+# mesmo tendo 3+ palavras. Só conta como vazamento real se o trecho tiver
+# mais palavras de CONTEÚDO do que de função.
+_PT_STOPWORDS = {
+    "a", "o", "as", "os", "de", "do", "da", "dos", "das", "em", "no", "na",
+    "nos", "nas", "um", "uma", "uns", "umas", "e", "ou", "que", "com",
+    "para", "por", "se", "e", "ao", "aos", "a", "as", "mais", "muito",
+    "como", "mas", "tambem", "ja", "seu", "sua", "seus", "suas", "este",
+    "esta", "isso", "isto", "ele", "ela", "eles", "elas", "entre", "sobre",
+    "sem", "sao", "ser", "esta", "estao", "foi", "eh", "nao", "sim",
+}
+
+
+def _is_meaningful_ngram(words: list[str]) -> bool:
+    content_words = [w for w in words if w not in _PT_STOPWORDS and len(w) > 2]
+    return len(content_words) >= max(2, (len(words) // 2) + 1)
+
 
 def _contains_ngram_leak(response_norm: str, option_norm: str) -> bool:
     words = option_norm.split()
@@ -48,7 +67,10 @@ def _contains_ngram_leak(response_norm: str, option_norm: str) -> bool:
         return len(option_norm) >= _MIN_LEN_FOR_MATCH and option_norm in response_norm
     for n in range(len(words), _MIN_NGRAM_WORDS - 1, -1):
         for i in range(len(words) - n + 1):
-            phrase = " ".join(words[i:i + n])
+            phrase_words = words[i:i + n]
+            if not _is_meaningful_ngram(phrase_words):
+                continue
+            phrase = " ".join(phrase_words)
             if len(phrase) >= _MIN_LEN_FOR_MATCH and phrase in response_norm:
                 return True
     return False
@@ -56,7 +78,7 @@ def _contains_ngram_leak(response_norm: str, option_norm: str) -> bool:
 
 def response_leaks_answer(response_text: str, correct_option_texts: list[str]) -> bool:
     """True se o texto da resposta contém um trecho reconhecível (3+
-    palavras seguidas) de alguma alternativa marcada como correta."""
+    palavras seguidas, com conteúdo real) de alguma alternativa correta."""
     normalized_response = _normalize(response_text)
     for opt_text in correct_option_texts:
         normalized_opt = _normalize(opt_text)
@@ -67,22 +89,26 @@ def response_leaks_answer(response_text: str, correct_option_texts: list[str]) -
     return False
 
 
-# Palavras que praticamente só aparecem em inglês — se aparecerem várias
-# vezes na mesma resposta, é sinal forte de raciocínio interno vazando
-# (o tutor só deveria responder em português brasileiro).
+# Marcadores de MONÓLOGO INTERNO em inglês — não palavras comuns isoladas
+# (tipo "the" ou "alternative", que podem aparecer legitimamente numa
+# resposta sobre um assunto de língua inglesa), só frases/termos que só
+# fazem sentido como o modelo "pensando em voz alta" sobre o aluno.
+# Tolera aspas retas e curvas (') e (').
 _ENGLISH_TELLS_RE = re.compile(
-    r"\b(the|okay|let'?s|i think|i'll|they've|they're|student is|"
-    r"alternative[s]?|struggling|let me|here'?s|wait|hint[s]?)\b",
+    r"(okay|let'?s|let me|i think|i'll|they'?ve|they'?re|"
+    r"the student is|struggling|here'?s where we are|recap|"
+    r"the alternatives are)",
     re.IGNORECASE,
 )
-_ENGLISH_TELLS_MIN_HITS = 3
+_ENGLISH_TELLS_MIN_HITS = 2
 
 
 def response_looks_like_leaked_reasoning(response_text: str) -> bool:
-    """True se o texto tem marcadores fortes de inglês em quantidade —
-    sinal de raciocínio interno do modelo vazando em vez da resposta
-    final em português."""
-    hits = _ENGLISH_TELLS_RE.findall(response_text)
+    """True se o texto tem marcadores fortes de monólogo interno em
+    inglês em quantidade — sinal de raciocínio do modelo vazando em vez
+    da resposta final em português."""
+    normalized = response_text.replace("’", "'").replace("‘", "'").replace("`", "'")
+    hits = _ENGLISH_TELLS_RE.findall(normalized)
     return len(hits) >= _ENGLISH_TELLS_MIN_HITS
 
 

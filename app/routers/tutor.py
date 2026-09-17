@@ -258,7 +258,10 @@ async def ask_tutor(
             objective=q_ctx.get("objective", ""),
             explanation=q_ctx.get("explanation", ""),
             hints_used=hints_usados,
-            student_name=(me.name if me else ""),
+            # Só o primeiro nome — nome completo soa formal demais numa
+            # conversa de chat, e é o que a IA usa pra personalizar
+            # toda a conversa, não só a saudação inicial.
+            student_name=((me.name or "").strip().split(" ")[0] if me else ""),
             history=[h.model_dump() for h in payload.history],
             system_hint=forced_hint,
         )

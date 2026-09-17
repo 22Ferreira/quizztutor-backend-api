@@ -734,6 +734,7 @@ async def patch_config(
 _ALLOWED_AI_KEYS = {
     "GROQ_API_KEY": "Groq",
     "GEMINI_API_KEY": "Gemini",
+    "OPENROUTER_API_KEY": "OpenRouter",
 }
 
 class SetAiKeyRequest(BaseModel):

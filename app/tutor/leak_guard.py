@@ -176,11 +176,13 @@ def response_narrates_in_third_person(response_text: str) -> bool:
 # Curtas e casuais de propósito — o resto do tutor fala como chat de
 # verdade (frase curta, direta, sem "formulário"); a mensagem de
 # segurança tem que soar igual, senão destoa e parece que "quebrou" bem
-# na hora em que a segurança tá funcionando certo.
+# na hora em que a segurança tá funcionando certo. Pedido explícito:
+# não soar como mensagem de erro — só avisar que quase mostrou demais
+# e pedir pra tentar de novo, sem alarme.
 _SAFE_REDIRECT_MESSAGES = [
-    "Quase fui longe demais aí! O que você já sabe sobre isso?",
-    "Deixa eu voltar um passo — o que você acha que já entende do assunto?",
-    "Vou com mais calma aqui. Me conta o que você já sabe sobre isso?",
+    "Opa, quase mostrei demais aí! Tenta perguntar de novo, de outro jeito?",
+    "Ia contar demais nessa! Tenta de novo — pergunta de um jeito diferente.",
+    "Quase escapou a resposta pronta! Tenta de novo, me pergunta de outra forma.",
 ]
 
 

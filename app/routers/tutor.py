@@ -240,7 +240,7 @@ async def ask_tutor(
             hints_used=hints_usados,
         )
 
-        is_attempt_active = attempt.status in (AttemptStatus.IN_PROGRESS, AttemptStatus.STARTED)
+        is_attempt_active = attempt.status == AttemptStatus.IN_PROGRESS
         is_quiz_open = quiz.status != "CLOSED"
         evaluation_mode = (quiz.mode == QuizMode.AVALIACAO)
 

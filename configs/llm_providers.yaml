@@ -23,6 +23,7 @@ fallback_order:
   - groq
   - google_gemini
   - openrouter
+  - openrouter_backup
   - huggingface
   - ollama
   - cohere
@@ -132,6 +133,31 @@ providers:
       temperature: 0.3
       max_tokens: 1024
     timeout_seconds: 20               # Reduzido pelo mesmo motivo do Gemini acima
+    rate_limit:
+      requests_per_minute: 20
+    openai_compatible: true
+    headers_extra:
+      HTTP-Referer: "http://localhost:8000"
+      X-Title: "Tutor Plataforma"
+
+  # ----------------------------------------------------------
+  # OPENROUTER (BACKUP) — mesma chave, modelo FIXO em vez do roteador
+  # automático. Visto ao vivo em produção o "openrouter/free" devolver
+  # resposta vazia (sem erro HTTP) — quando isso acontece, esse aqui
+  # tenta um modelo específico e estável em vez de deixar o roteador
+  # decidir de novo (que provavelmente cairia no mesmo problema).
+  # ----------------------------------------------------------
+  openrouter_backup:
+    enabled: true
+    name: "OpenRouter (Llama 3.3 70B Free)"
+    base_url: "https://openrouter.ai/api/v1"
+    api_key_env: "OPENROUTER_API_KEY"
+    models:
+      default: "meta-llama/llama-3.3-70b-instruct:free"
+    parameters:
+      temperature: 0.3
+      max_tokens: 1024
+    timeout_seconds: 20
     rate_limit:
       requests_per_minute: 20
     openai_compatible: true

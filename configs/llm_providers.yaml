@@ -141,19 +141,28 @@ providers:
       X-Title: "Tutor Plataforma"
 
   # ----------------------------------------------------------
-  # OPENROUTER (BACKUP) — mesma chave, modelo FIXO em vez do roteador
-  # automático. Visto ao vivo em produção o "openrouter/free" devolver
-  # resposta vazia (sem erro HTTP) — quando isso acontece, esse aqui
-  # tenta um modelo específico e estável em vez de deixar o roteador
-  # decidir de novo (que provavelmente cairia no mesmo problema).
+  # OPENROUTER (BACKUP) — mesma chave e mesmo roteador automático do
+  # "openrouter" acima, mas como uma 2ª tentativa independente.
+  #
+  # Antes apontava pra um modelo fixo (meta-llama/llama-3.3-70b-
+  # instruct:free) — quebrou com 404 "unavailable for free" assim que a
+  # OpenRouter descontinuou a versão grátis dele. A lista de modelos
+  # :free específicos muda com muita frequência (confirmado: só em 2026
+  # já vimos vários serem descontinuados), então qualquer nome fixo
+  # aqui vira dívida técnica cedo ou tarde. "openrouter/free" não tem
+  # esse problema — é o próprio roteador oficial deles, sempre aponta
+  # pro que estiver disponível no momento. Repetir ele aqui como backup
+  # ainda tem valor: se a 1ª chamada bateu no caso raro de resposta
+  # vazia (sem erro HTTP) em vez de rate limit de verdade, uma 2ª
+  # tentativa independente pode cair num modelo diferente.
   # ----------------------------------------------------------
   openrouter_backup:
     enabled: true
-    name: "OpenRouter (Llama 3.3 70B Free)"
+    name: "OpenRouter (Free Router, 2ª tentativa)"
     base_url: "https://openrouter.ai/api/v1"
     api_key_env: "OPENROUTER_API_KEY"
     models:
-      default: "meta-llama/llama-3.3-70b-instruct:free"
+      default: "openrouter/free"
     parameters:
       temperature: 0.3
       max_tokens: 1024

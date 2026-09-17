@@ -18,7 +18,6 @@ from app.models.quiz import Quiz, TutorConfig, QuizQuestion, QuizMode
 from app.models.attempt import Attempt, AttemptStatus, AttemptQuestionState, Answer
 from app.models.audit import TutorInteraction
 from app.schemas.tutor import TutorAskRequest, TutorAskResponse
-from app.services.guardrails import simple_out_of_scope_detector
 from app.services.audit import event
 
 # Novos módulos de IA
@@ -141,10 +140,14 @@ async def ask_tutor(
             answer = await _get_answer(db, attempt.id, qq.id)
 
     # --- Verificar scope ---
-    scope_text = q_ctx.get("question_statement", "") + " " + quiz.title
+    # Antes, um detector por sobreposição de palavras bloqueava a mensagem
+    # ANTES de chegar na IA — mas ele só sabe comparar palavras, não
+    # sentido, e bloqueava até pedidos legítimos ("me ajude", "dê uma
+    # dica") só por não repetirem palavras do enunciado. O prompt da IA
+    # (tutor_prompts.yaml) já instrui ela a redirecionar perguntas
+    # realmente fora do assunto — e ela entende sentido, não só palavras —
+    # então confiamos nisso em vez de um filtro raso antes da IA.
     fora_escopo = False
-    if not tc.allow_out_of_scope and tc.scope.value != "LIVRE":
-        fora_escopo = simple_out_of_scope_detector(scope_text, payload.message)
 
     # --- Montar contexto para árvore de decisão ---
     hints_usados = state.hints_used if state else 0

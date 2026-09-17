@@ -5,6 +5,7 @@ A lógica de "quem responde" está no llm_providers.yaml.
 Os prompts estão no tutor_prompts.yaml.
 """
 import logging
+import time
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -328,6 +329,7 @@ async def ask_tutor(
             )
             return result.message
 
+        t0 = time.monotonic()
         response_content = await _ask_llm()
 
         # Rede de segurança: a instrução no prompt pra nunca revelar a
@@ -344,9 +346,28 @@ async def ask_tutor(
             # 400): um vazamento por raciocínio pode ter bastante texto
             # de "preâmbulo" antes da parte que realmente vaza.
             logger.warning(
-                f"[TutorGuard] Resposta bloqueada por {leak_reason} — tentando de novo com outro "
-                f"provedor antes de desistir — question_id={qq.id} | texto_bloqueado={response_content[:900]!r}"
+                f"[TutorGuard] Resposta bloqueada por {leak_reason} — "
+                f"question_id={qq.id} | texto_bloqueado={response_content[:900]!r}"
             )
+            elapsed = time.monotonic() - t0
+            # Visto ao vivo: em dia de cota apertada (Groq/Gemini 429
+            # rápido, mas a OpenRouter às vezes levando ~20s+ pra
+            # devolver vazio), a 1ª tentativa já pode ter demorado
+            # bastante sozinha — somar uma 2ª tentativa inteira em cima
+            # ultrapassa o tempo que o navegador aguenta esperar, e o
+            # aluno acaba recebendo o erro genérico em vez de QUALQUER
+            # resposta (nem a mensagem educada de segurança chega a
+            # tempo). Só vale tentar de novo se ainda sobrar uma margem
+            # razoável de espera.
+            if elapsed > 12:
+                logger.warning(
+                    f"[TutorGuard] 1ª tentativa já levou {elapsed:.1f}s — pulando a 2ª tentativa "
+                    f"pra não estourar o tempo de espera do aluno — question_id={qq.id}"
+                )
+                response_content = get_safe_redirect_message(ctx.student_name)
+                leak_reason = None  # já tratado, não cai no bloco de retry abaixo
+
+        if leak_reason:
             # Antes, um bloqueio virava direto a mensagem genérica — o
             # aluno ficava sem ajuda nenhuma mesmo quando o provedor
             # seguinte na cadeia de fallback (Gemini/OpenRouter) teria

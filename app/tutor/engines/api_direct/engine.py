@@ -28,6 +28,8 @@ class ApiDirectEngine(TutorEngine):
             custom_system_prompt=None,
             include_explanation=False,
             system_hint=None,
+            student_name=context.student_name,
+            history=context.history,
         )
 
         llm = await llm_manager.chat(messages)

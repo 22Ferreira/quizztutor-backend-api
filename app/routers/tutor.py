@@ -241,6 +241,8 @@ async def ask_tutor(
             objective=q_ctx.get("objective", ""),
             explanation=q_ctx.get("explanation", ""),
             hints_used=hints_usados,
+            student_name=(me.name if me else ""),
+            history=[h.model_dump() for h in payload.history],
         )
 
         is_attempt_active = attempt.status == AttemptStatus.IN_PROGRESS

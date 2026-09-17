@@ -25,6 +25,8 @@ def build_tutor_messages(
     custom_system_prompt: str | None = None,
     include_explanation: bool = False,
     system_hint: str | None = None,
+    student_name: str = "",
+    history: list[dict] | None = None,
 ) -> list[LLMMessage]:
     """
     Monta a lista de mensagens para enviar ao LLM.
@@ -35,6 +37,11 @@ def build_tutor_messages(
     base_prompt = prompts_cfg.get("base_system_prompt", "Você é um tutor educacional. Responda em português.")
     scope_prompts = prompts_cfg.get("scope_prompts", {})
     response_style = prompts_cfg.get("response_style", {})
+
+    # .replace em vez de .format: base_prompt não tem outros placeholders
+    # definidos, então .format() quebraria se alguém digitasse uma chave
+    # {algo} sem querer ao editar o YAML.
+    base_prompt = base_prompt.replace("{student_name}", student_name or "aluno(a)")
 
     # Montar scope prompt
     scope_template = scope_prompts.get(scope, scope_prompts.get("SOMENTE_QUESTAO_ATUAL", ""))
@@ -68,8 +75,19 @@ def build_tutor_messages(
 
     system_content = "\n".join(system_parts)
 
+    # Histórico recente entra ANTES da mensagem nova — é o que permite a IA
+    # perceber que já respondeu isso antes em vez de repetir a mesma
+    # pergunta socrática em loop, e escalar o nível de ajuda se o aluno
+    # já insistiu várias vezes sem conseguir.
+    history_messages = [
+        LLMMessage(role="assistant" if h.get("role") == "assistant" else "user", content=h.get("content", ""))
+        for h in (history or [])
+        if h.get("content")
+    ]
+
     return [
         LLMMessage(role="system", content=system_content),
+        *history_messages,
         LLMMessage(role="user", content=user_message),
     ]
 

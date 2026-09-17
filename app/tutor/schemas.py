@@ -13,7 +13,7 @@ independente do motor escolhido.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal, Optional, Dict, Any
 
 
@@ -37,6 +37,9 @@ class TutorContext:
     objective: str
     explanation: str
     hints_used: int
+    student_name: str = ""
+    # Últimas trocas da conversa, mais antiga primeiro: [{"role": "user"|"assistant", "content": "..."}]
+    history: list[Dict[str, str]] = field(default_factory=list)
 
 
 @dataclass

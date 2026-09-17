@@ -40,6 +40,11 @@ class TutorContext:
     student_name: str = ""
     # Últimas trocas da conversa, mais antiga primeiro: [{"role": "user"|"assistant", "content": "..."}]
     history: list[Dict[str, str]] = field(default_factory=list)
+    # Instrução extra calculada em código (não pelo LLM) pra garantir
+    # comportamento que o modelo não segue de forma confiável só com o
+    # prompt geral — ex: forçar liberar o aluno pra responder depois de
+    # N trocas, já que contar repetições "de cabeça" o modelo faz mal.
+    system_hint: str = ""
 
 
 @dataclass

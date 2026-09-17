@@ -27,7 +27,7 @@ class ApiDirectEngine(TutorEngine):
             explanation=context.explanation,
             custom_system_prompt=None,
             include_explanation=False,
-            system_hint=None,
+            system_hint=(context.system_hint or None),
             student_name=context.student_name,
             history=context.history,
         )

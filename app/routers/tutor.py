@@ -229,6 +229,23 @@ async def ask_tutor(
     elif decision.action == "SEND_TO_LLM":
         # ===== Motor escolhido pelo .env =====
         # TUTOR_ENGINE=API_DIRECT | DECISION_TREE | RAG_LLM
+
+        # Forçar liberação após N trocas — calculado em código porque o
+        # modelo não conta repetições/trocas de forma confiável só com a
+        # instrução no prompt (testado e confirmado: ele demora várias
+        # trocas a mais do que devia pra "perceber" que já pode liberar).
+        user_turns = sum(1 for h in payload.history if h.role == "user")
+        forced_hint = ""
+        if user_turns >= 3:
+            forced_hint = (
+                "Essa conversa já teve várias trocas sobre a mesma questão. "
+                "Se o aluno demonstrou QUALQUER confiança numa alternativa "
+                "(mesmo só repetindo a mesma sem justificativa nova), NÃO "
+                "peça mais explicação nem faça outra pergunta socrática "
+                "aberta — confirme e incentive-o diretamente a marcar a "
+                "resposta agora."
+            )
+
         ctx = TutorContext(
             attempt_id=str(attempt.id),
             quiz_id=str(quiz.id),
@@ -243,6 +260,7 @@ async def ask_tutor(
             hints_used=hints_usados,
             student_name=(me.name if me else ""),
             history=[h.model_dump() for h in payload.history],
+            system_hint=forced_hint,
         )
 
         is_attempt_active = attempt.status == AttemptStatus.IN_PROGRESS

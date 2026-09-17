@@ -305,16 +305,30 @@ async def ask_tutor(
         is_quiz_open = quiz.status != "CLOSED"
         evaluation_mode = (quiz.mode == QuizMode.AVALIACAO)
 
-        result = await tutor_service.answer(
-            db=db,
-            context=ctx,
-            user_message=payload.message,
-            is_attempt_active=is_attempt_active,
-            is_quiz_open=is_quiz_open,
-            out_of_scope=out_of_scope,
-            evaluation_mode=evaluation_mode,
-        )
-        response_content = result.message
+        correct_texts = [o.text for o in qq.options if o.is_correct]
+
+        def _leak_reason(text: str) -> str | None:
+            if response_leaks_answer(text, correct_texts):
+                return "vazar a alternativa correta"
+            if response_looks_like_leaked_reasoning(text):
+                return "parecer raciocínio interno vazando (inglês)"
+            if response_narrates_in_third_person(text):
+                return "narrar em 3ª pessoa (raciocínio em português)"
+            return None
+
+        async def _ask_llm() -> str:
+            result = await tutor_service.answer(
+                db=db,
+                context=ctx,
+                user_message=payload.message,
+                is_attempt_active=is_attempt_active,
+                is_quiz_open=is_quiz_open,
+                out_of_scope=out_of_scope,
+                evaluation_mode=evaluation_mode,
+            )
+            return result.message
+
+        response_content = await _ask_llm()
 
         # Rede de segurança: a instrução no prompt pra nunca revelar a
         # resposta é só instrução, a IA já vazou de verdade em testes ao
@@ -322,38 +336,35 @@ async def ask_tutor(
         # Essa checagem roda em código, comparando com o texto literal da
         # alternativa correta — que nunca foi mandado pra IA — então não
         # depende dela seguir regra nenhuma.
-        correct_texts = [o.text for o in qq.options if o.is_correct]
-        if response_leaks_answer(response_content, correct_texts):
+        leak_reason = _leak_reason(response_content)
+        if leak_reason:
             # Log do texto bloqueado (truncado) é essencial aqui — sem
             # isso não dá pra saber depois se foi vazamento de verdade
             # ou falso positivo do filtro, só especular. 900 chars (não
             # 400): um vazamento por raciocínio pode ter bastante texto
             # de "preâmbulo" antes da parte que realmente vaza.
             logger.warning(
-                f"[TutorGuard] Resposta bloqueada por vazar a alternativa correta — "
-                f"question_id={qq.id} | texto_bloqueado={response_content[:900]!r}"
+                f"[TutorGuard] Resposta bloqueada por {leak_reason} — tentando de novo com outro "
+                f"provedor antes de desistir — question_id={qq.id} | texto_bloqueado={response_content[:900]!r}"
             )
-            response_content = get_safe_redirect_message(ctx.student_name)
-        elif response_looks_like_leaked_reasoning(response_content):
-            # Raciocínio interno do modelo vazando em inglês, sem tag
-            # nenhuma pra identificar (a limpeza de <think> em
-            # openai_compat.py não pega isso) — mesma gravidade do caso
-            # acima, bloqueado do mesmo jeito.
-            logger.warning(
-                f"[TutorGuard] Resposta bloqueada por parecer raciocínio interno vazando (inglês) — "
-                f"question_id={qq.id} | texto_bloqueado={response_content[:900]!r}"
-            )
-            response_content = get_safe_redirect_message(ctx.student_name)
-        elif response_narrates_in_third_person(response_content):
-            # Mesmo vazamento de raciocínio, mas em PORTUGUÊS — visto ao
-            # vivo: "O aluno pediu outra dica. Vou seguir a regra da
-            # dica pedida..." em vez de responder de verdade pro aluno.
-            # O detector em inglês não pega isso, precisa de um separado.
-            logger.warning(
-                f"[TutorGuard] Resposta bloqueada por narrar em 3ª pessoa (raciocínio em português) — "
-                f"question_id={qq.id} | texto_bloqueado={response_content[:900]!r}"
-            )
-            response_content = get_safe_redirect_message(ctx.student_name)
+            # Antes, um bloqueio virava direto a mensagem genérica — o
+            # aluno ficava sem ajuda nenhuma mesmo quando o provedor
+            # seguinte na cadeia de fallback (Gemini/OpenRouter) teria
+            # respondido bem. Uma segunda tentativa chama de novo desde
+            # o início da cadeia (llm_manager tenta Groq -> Gemini ->
+            # OpenRouter a cada chamada) — com sorte cai num provedor ou
+            # modelo diferente do que vazou. Só desiste (mensagem
+            # genérica) se a 2ª tentativa também vazar.
+            retry_content = await _ask_llm()
+            retry_leak_reason = _leak_reason(retry_content)
+            if retry_leak_reason:
+                logger.warning(
+                    f"[TutorGuard] 2ª tentativa TAMBÉM bloqueada por {retry_leak_reason} — "
+                    f"question_id={qq.id} | texto_bloqueado={retry_content[:900]!r}"
+                )
+                response_content = get_safe_redirect_message(ctx.student_name)
+            else:
+                response_content = retry_content
 
     else:
         response_content = decision.message_template or "Como posso ajudá-lo com esta questão?"

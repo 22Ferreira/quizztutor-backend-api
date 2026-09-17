@@ -11,6 +11,7 @@ import pytest
 from app.tutor.leak_guard import (
     response_leaks_answer,
     response_looks_like_leaked_reasoning,
+    response_narrates_in_third_person,
 )
 
 
@@ -93,3 +94,24 @@ class TestResponseLooksLikeLeakedReasoning:
         # Uma palavra isolada em inglês não é sinal forte o bastante sozinha.
         resp = "Isso é um bom insight, vamos continuar pensando no assunto."
         assert response_looks_like_leaked_reasoning(resp) is False
+
+
+class TestResponseNarratesInThirdPerson:
+    def test_raciocinio_vazado_em_portugues_caso_real(self):
+        # Caso real: a IA narrou o próprio processo em vez de responder,
+        # e ainda inventou uma "dica anterior" que era só o exemplo do
+        # prompt, nunca dita de verdade na conversa.
+        resp = (
+            "O aluno pediu outra dica. Vou seguir a regra da dica pedida "
+            "diretamente: preciso dar uma afirmação real que reduz opções, "
+            "não mais uma pergunta disfarçada."
+        )
+        assert response_narrates_in_third_person(resp) is True
+
+    def test_nao_bloqueia_resposta_dirigida_ao_aluno(self):
+        resp = "Pense bem: qual das alternativas parece bloquear leituras não repetíveis mas ainda permitir fantasmas?"
+        assert response_narrates_in_third_person(resp) is False
+
+    def test_nao_bloqueia_confirmacao_normal(self):
+        resp = "Você já disse que acha que é essa alternativa, quer confirmar o motivo?"
+        assert response_narrates_in_third_person(resp) is False

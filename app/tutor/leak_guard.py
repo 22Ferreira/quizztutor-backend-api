@@ -134,6 +134,34 @@ def response_looks_like_leaked_reasoning(response_text: str) -> bool:
     return len(hits) >= _ENGLISH_TELLS_MIN_HITS
 
 
+# Vazamento de raciocínio TAMBÉM acontece em português — visto ao vivo:
+# a IA narrando o próprio processo em vez de responder ("O aluno pediu
+# outra dica. Vou seguir a regra da dica pedida diretamente..."). O
+# detector em inglês não pega isso (não tem palavra em inglês nenhuma).
+# O sinal aqui é diferente e mais confiável: uma resposta de verdade
+# SEMPRE se dirige ao aluno na 2ª pessoa ("você pediu...") — falar dele
+# na 3ª pessoa ("o aluno pediu") ou narrar a própria regra que está
+# seguindo é essencialmente exclusivo de raciocínio interno vazando,
+# risco de falso positivo bem baixo, por isso 1 ocorrência já basta.
+_PT_REASONING_TELLS_RE = re.compile(
+    r"\b(o aluno pediu|o aluno perguntou|o aluno quer|o aluno já disse|"
+    r"o aluno está|o estudante (?:pediu|perguntou|quer)|"
+    r"vou seguir a regra|preciso seguir a regra|de acordo com a regra|"
+    r"seguindo a instrução|preciso dar uma (?:dica|resposta|afirmação)|"
+    r"preciso responder (?:com|de)|isso já foi uma dica)\b",
+    re.IGNORECASE,
+)
+
+
+def response_narrates_in_third_person(response_text: str) -> bool:
+    """True se a resposta fala DO aluno em vez de PRA ele, ou narra a
+    própria regra que está seguindo — sinal de raciocínio interno
+    vazando em português (o detector em inglês não cobre esse caso)."""
+    # Só minúsculas aqui, sem tirar acento/pontuação — o regex já usa
+    # os acentos certos, e _normalize() tiraria eles sem necessidade.
+    return _PT_REASONING_TELLS_RE.search(response_text.lower()) is not None
+
+
 # Lista, não string única: se o bloqueio disparar 2+ vezes na mesma
 # conversa (acontece — visto em produção), repetir a MESMA frase parece
 # resposta travada/robótica, exatamente o tipo de coisa que o resto do

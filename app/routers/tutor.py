@@ -25,7 +25,12 @@ from app.ai.decision_tree.engine import evaluate, build_tutor_context
 from app.ai.llm.manager import llm_manager
 from app.tutor.service import TutorService
 from app.tutor.schemas import TutorContext
-from app.tutor.leak_guard import response_leaks_answer, response_looks_like_leaked_reasoning, get_safe_redirect_message
+from app.tutor.leak_guard import (
+    response_leaks_answer,
+    response_looks_like_leaked_reasoning,
+    response_narrates_in_third_person,
+    get_safe_redirect_message,
+)
 from app.ai.rag.retriever import retrieve as rag_retrieve
 from app.ai.llm.prompt_builder import (
     build_tutor_messages,
@@ -299,10 +304,12 @@ async def ask_tutor(
         if response_leaks_answer(response_content, correct_texts):
             # Log do texto bloqueado (truncado) é essencial aqui — sem
             # isso não dá pra saber depois se foi vazamento de verdade
-            # ou falso positivo do filtro, só especular.
+            # ou falso positivo do filtro, só especular. 900 chars (não
+            # 400): um vazamento por raciocínio pode ter bastante texto
+            # de "preâmbulo" antes da parte que realmente vaza.
             logger.warning(
                 f"[TutorGuard] Resposta bloqueada por vazar a alternativa correta — "
-                f"question_id={qq.id} | texto_bloqueado={response_content[:400]!r}"
+                f"question_id={qq.id} | texto_bloqueado={response_content[:900]!r}"
             )
             response_content = get_safe_redirect_message(ctx.student_name)
         elif response_looks_like_leaked_reasoning(response_content):
@@ -311,8 +318,18 @@ async def ask_tutor(
             # openai_compat.py não pega isso) — mesma gravidade do caso
             # acima, bloqueado do mesmo jeito.
             logger.warning(
-                f"[TutorGuard] Resposta bloqueada por parecer raciocínio interno vazando — "
-                f"question_id={qq.id} | texto_bloqueado={response_content[:400]!r}"
+                f"[TutorGuard] Resposta bloqueada por parecer raciocínio interno vazando (inglês) — "
+                f"question_id={qq.id} | texto_bloqueado={response_content[:900]!r}"
+            )
+            response_content = get_safe_redirect_message(ctx.student_name)
+        elif response_narrates_in_third_person(response_content):
+            # Mesmo vazamento de raciocínio, mas em PORTUGUÊS — visto ao
+            # vivo: "O aluno pediu outra dica. Vou seguir a regra da
+            # dica pedida..." em vez de responder de verdade pro aluno.
+            # O detector em inglês não pega isso, precisa de um separado.
+            logger.warning(
+                f"[TutorGuard] Resposta bloqueada por narrar em 3ª pessoa (raciocínio em português) — "
+                f"question_id={qq.id} | texto_bloqueado={response_content[:900]!r}"
             )
             response_content = get_safe_redirect_message(ctx.student_name)
 

@@ -55,7 +55,10 @@ providers:
       temperature: 0.3
       max_tokens: 1024
       top_p: 0.9
-    timeout_seconds: 30
+    timeout_seconds: 20               # Reduzido: não deixar a cadeia de
+                                       # fallback inteira refém de um
+                                       # provedor lento (ver comentário
+                                       # no Gemini abaixo)
     rate_limit:
       requests_per_minute: 30        # Limite conservador
       requests_per_day: 14000
@@ -83,7 +86,15 @@ providers:
     parameters:
       temperature: 0.3
       max_tokens: 1024
-    timeout_seconds: 45
+    # Reduzido de 45s pra 20s: visto ao vivo em produção o Gemini demorar
+    # até 38s pra devolver um 503 "high demand" — com 4 provedores na
+    # cadeia de fallback, cada um esperando o timeout cheio, a resposta
+    # inteira pode passar de 1 minuto e o navegador do aluno desiste
+    # antes (erro genérico "Erro ao contatar o tutor" no front, mesmo
+    # que o backend fosse responder certo depois). Rejeitar mais cedo e
+    # cair pro próximo provedor é melhor que esperar o timeout cheio de
+    # um provedor que já está lento/sobrecarregado.
+    timeout_seconds: 20
     rate_limit:
       requests_per_minute: 14
     openai_compatible: false         # Usa API própria do Gemini
@@ -114,7 +125,7 @@ providers:
     parameters:
       temperature: 0.3
       max_tokens: 1024
-    timeout_seconds: 60
+    timeout_seconds: 20               # Reduzido pelo mesmo motivo do Gemini acima
     rate_limit:
       requests_per_minute: 20
     openai_compatible: true
@@ -151,7 +162,12 @@ providers:
   # Modelos: ollama pull llama3.1
   # ----------------------------------------------------------
   ollama:
-    enabled: true
+    # Desabilitado: o VPS de produção não roda Ollama (é só pra quem
+    # instalar localmente). Deixado habilitado, toda vez que os outros
+    # provedores falhavam ele ainda tentava conectar em localhost:11434,
+    # sempre falhava, e só adicionava atraso extra na cadeia de fallback
+    # bem na hora em que ela já estava mais lenta (cota estourada).
+    enabled: false
     name: "Ollama (Local)"
     base_url_env: "OLLAMA_BASE_URL"  # Default: http://localhost:11434
     base_url_default: "http://localhost:11434"

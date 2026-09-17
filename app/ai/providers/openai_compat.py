@@ -6,11 +6,21 @@ Usa httpx.AsyncClient global (singleton) para reutilizar conexões.
 import logging
 import os
 import httpx
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
 
 from app.ai.providers.base import BaseLLMProvider, LLMMessage, LLMResponse
 
 logger = logging.getLogger(__name__)
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    # Mesma lógica do provedor Gemini (app/ai/providers/gemini.py): só
+    # vale a pena tentar de novo em falha passageira (rede, erro 5xx).
+    # Retentar um 429 (cota/limite estourado) é inútil — o provedor vai
+    # continuar recusando pelo mesmo motivo, e só atrasa a resposta.
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code >= 500
+    return isinstance(exc, httpx.TransportError)
 
 # Client global compartilhado: reutiliza pool de conexões TCP
 _GLOBAL_CLIENT: httpx.AsyncClient | None = None
@@ -46,7 +56,23 @@ class OpenAICompatProvider(BaseLLMProvider):
         models = self.config.get("models", {})
         return models.get("default", "gpt-3.5-turbo")
 
-    @retry(stop=stop_after_attempt(2), wait=wait_exponential(multiplier=0.5, min=0.5, max=3))
+    # Isolado numa função própria que RAISA o erro (em vez de devolver um
+    # LLMResponse), porque é assim que o @retry consegue interceptar —
+    # antes, o @retry ficava em cima de chat(), que sempre capturava a
+    # exceção e devolvia um resultado, então o retry nunca disparava,
+    # nem pra falha passageira de rede que valeria a pena tentar de novo.
+    @retry(
+        stop=stop_after_attempt(2),
+        wait=wait_exponential(multiplier=0.5, min=0.5, max=3),
+        retry=retry_if_exception(_is_retryable),
+        reraise=True,
+    )
+    async def _post(self, url: str, payload: dict, headers: dict, timeout: float) -> dict:
+        client = get_http_client()
+        r = await client.post(url, json=payload, headers=headers, timeout=timeout)
+        r.raise_for_status()
+        return r.json()
+
     async def chat(self, messages: list[LLMMessage], **kwargs) -> LLMResponse:
         base_url = self._resolve_base_url()
         api_key = self._resolve_api_key()
@@ -72,11 +98,11 @@ class OpenAICompatProvider(BaseLLMProvider):
         }
 
         try:
-            client = get_http_client()
-            r = await client.post(url, json=payload, headers=headers, timeout=timeout)
-            r.raise_for_status()
-            data = r.json()
+            data = await self._post(url, payload, headers, timeout)
             content = data["choices"][0]["message"]["content"]
+            if not content:
+                logger.warning(f"[{self.name}] Resposta vazia (sem erro HTTP) — modelo: {model}")
+                return LLMResponse(content="", provider=self.name, model=model, success=False, error="Resposta vazia do provedor")
             return LLMResponse(content=content, provider=self.name, model=model, success=True)
         except httpx.HTTPStatusError as e:
             logger.warning(f"[{self.name}] HTTP error: {e.response.status_code} — {e.response.text[:200]}")

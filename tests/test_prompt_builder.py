@@ -87,3 +87,21 @@ def test_scope_desconhecido_cai_no_padrao_sem_quebrar():
     # Não deve lançar exceção mesmo com escopo que não existe no YAML.
     messages = build_tutor_messages(user_message="oi", scope="ESCOPO_QUE_NAO_EXISTE")
     assert messages[0].role == "system"
+
+
+def test_placeholder_invalido_no_yaml_nao_derruba_a_chamada(monkeypatch):
+    # tutor_prompts.yaml é editado à mão — um placeholder digitado errado
+    # (ex: {questao} em vez de {question}) não pode virar um KeyError não
+    # tratado toda vez que alguém chamar o tutor nesse escopo.
+    import app.ai.llm.prompt_builder as pb
+
+    def fake_get_tutor_prompts():
+        return {
+            "base_system_prompt": "Base.",
+            "scope_prompts": {"SOMENTE_QUESTAO_ATUAL": "Quebrado: {questao_com_typo}"},
+            "response_style": {},
+        }
+
+    monkeypatch.setattr(pb, "get_tutor_prompts", fake_get_tutor_prompts)
+    messages = build_tutor_messages(user_message="oi", scope="SOMENTE_QUESTAO_ATUAL")
+    assert messages[0].role == "system"  # não lançou exceção

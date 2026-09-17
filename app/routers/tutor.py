@@ -214,13 +214,24 @@ async def ask_tutor(
 
     elif decision.action == "OFFER_HINT":
         next_level = hints_usados + 1
-        hint_map = {1: q_ctx.get("hint_1"), 2: q_ctx.get("hint_2"), 3: q_ctx.get("hint_3")}
+        # "" explícito, não None: hint_map já tem as chaves 1/2/3
+        # presentes mesmo com qq ausente (q_ctx vazio), então o default
+        # do .get() abaixo nunca entraria em ação — sem isso aqui,
+        # hint_text vira None (funciona hoje só porque None é falsy,
+        # mas quebraria num refactor futuro que fizesse .strip() nele).
+        hint_map = {1: q_ctx.get("hint_1") or "", 2: q_ctx.get("hint_2") or "", 3: q_ctx.get("hint_3") or ""}
         hint_text = hint_map.get(next_level, "")
         if hint_text:
             response_content = f"💡 **Dica (nível {next_level}):** {hint_text}"
-            # Atualizar state
+            # Atualizar state — se ainda não existir uma linha (aluno
+            # pediu dica antes do fluxo de "próxima questão" criar o
+            # registro), cria agora. Sem isso, o incremento era
+            # descartado em silêncio e a mesma dica nível 1 era servida
+            # pra sempre, nunca alcançando o esgotamento de dicas.
             if state:
                 state.hints_used = next_level
+            else:
+                db.add(AttemptQuestionState(attempt_id=attempt.id, question_id=qq.id, hints_used=next_level))
         else:
             response_content = get_message("max_hints_reached") or "Não há mais dicas disponíveis."
 
@@ -240,6 +251,17 @@ async def ask_tutor(
         response_content = decision.message_template or "Resposta registrada."
 
     elif decision.action == "SEND_TO_LLM":
+        # question_id é opcional no schema (TutorAskRequest), mas esse
+        # ramo monta TutorContext com qq.id e depois qq.options — sem
+        # essa guarda, question_id ausente/inválido derrubava a rota com
+        # 500 não tratado (AttributeError: 'NoneType' object has no
+        # attribute 'id'), inclusive pulando o filtro anti-vazamento.
+        if not qq:
+            raise HTTPException(
+                status_code=400,
+                detail="Não foi possível identificar a questão para o tutor ajudar. Recarregue a página e tente novamente.",
+            )
+
         # ===== Motor escolhido pelo .env =====
         # TUTOR_ENGINE=API_DIRECT | DECISION_TREE | RAG_LLM
 

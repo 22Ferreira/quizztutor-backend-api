@@ -45,13 +45,22 @@ def build_tutor_messages(
 
     # Montar scope prompt
     scope_template = scope_prompts.get(scope, scope_prompts.get("SOMENTE_QUESTAO_ATUAL", ""))
-    scope_content = scope_template.format(
-        quiz_title=quiz_title,
-        question=question_statement,
-        options=options_text,
-        topic=topic or "não especificado",
-        objective=objective or "não especificado",
-    )
+    try:
+        scope_content = scope_template.format(
+            quiz_title=quiz_title,
+            question=question_statement,
+            options=options_text,
+            topic=topic or "não especificado",
+            objective=objective or "não especificado",
+        )
+    except (KeyError, ValueError) as e:
+        # O YAML é editado à mão (o próprio cabeçalho do arquivo diz
+        # "Edite sem tocar no código") — um placeholder digitado errado
+        # (ex: {questao} em vez de {question}) não pode derrubar toda
+        # chamada ao tutor com um KeyError não tratado. get_message()
+        # logo abaixo já tem essa mesma proteção; aqui faltava.
+        logger.error(f"Erro ao formatar scope_prompt '{scope}': {e}. Usando o template sem substituição.")
+        scope_content = scope_template
 
     # Montar system completo
     system_parts = [base_prompt.strip()]

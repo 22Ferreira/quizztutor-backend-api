@@ -32,6 +32,21 @@ def _strip_reasoning(content: str) -> str:
     return cleaned.strip()
 
 
+# Visto ao vivo: o roteador automático da OpenRouter (openrouter/free)
+# pode escolher, por engano, um modelo de MODERAÇÃO (tipo Llama Guard)
+# em vez de um modelo de conversa — esses modelos só existem pra
+# classificar "seguro/inseguro", nunca respondem de verdade. A saída
+# deles é sempre nesse formato fixo, então dá pra reconhecer com
+# segurança e tratar como falha do provedor (não como resposta real).
+_SAFETY_CLASSIFIER_RE = re.compile(
+    r"^\s*(user safety|response safety)\s*:\s*(safe|unsafe)\b", re.IGNORECASE
+)
+
+
+def _looks_like_safety_classifier_output(content: str) -> bool:
+    return bool(_SAFETY_CLASSIFIER_RE.match(content))
+
+
 def _is_retryable(exc: BaseException) -> bool:
     # Mesma lógica do provedor Gemini (app/ai/providers/gemini.py): só
     # vale a pena tentar de novo em falha passageira (rede, erro 5xx).
@@ -123,6 +138,13 @@ class OpenAICompatProvider(BaseLLMProvider):
             if not content:
                 logger.warning(f"[{self.name}] Resposta vazia (sem erro HTTP) — modelo: {model}")
                 return LLMResponse(content="", provider=self.name, model=model, success=False, error="Resposta vazia do provedor")
+            if _looks_like_safety_classifier_output(content):
+                # O roteador automático escolheu um modelo de moderação
+                # por engano — nunca é uma resposta de verdade pro
+                # aluno, sempre tratar como se o provedor tivesse
+                # falhado, pra cair no próximo da cadeia de fallback.
+                logger.warning(f"[{self.name}] Modelo devolveu saída de classificador de segurança, não uma resposta — modelo: {model} | conteudo={content[:200]!r}")
+                return LLMResponse(content="", provider=self.name, model=model, success=False, error="Modelo escolhido era um classificador de moderação, não um modelo de conversa")
             return LLMResponse(content=content, provider=self.name, model=model, success=True)
         except httpx.HTTPStatusError as e:
             logger.warning(f"[{self.name}] HTTP error: {e.response.status_code} — {e.response.text[:200]}")

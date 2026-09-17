@@ -145,19 +145,20 @@ def response_looks_like_leaked_reasoning(response_text: str) -> bool:
 # IA tentou explicar conteúdo técnico em cima de um simples "boa tarde"
 # e vazou), e uma frase que referencia contexto inexistente fica sem
 # nexo nenhum pro aluno, parecendo bug em vez de segurança funcionando.
+# Curtas e casuais de propósito — o resto do tutor fala como chat de
+# verdade (frase curta, direta, sem "formulário"); a mensagem de
+# segurança tem que soar igual, senão destoa e parece que "quebrou" bem
+# na hora em que a segurança tá funcionando certo.
 _SAFE_REDIRECT_MESSAGES = [
-    "Opa, quase fui longe demais aí! Vamos com calma: me conta o que "
-    "você já sabe sobre o assunto da questão, e pensamos juntos a "
-    "partir daí.",
-    "Deixa eu voltar um passo antes de ir longe demais — o que você já "
-    "entende sobre o tema dessa questão? Vamos por aí.",
-    "Vou puxar o freio antes de entregar de mais. Me conta o que você "
-    "já sabe sobre o assunto, e seguimos o raciocínio juntos.",
+    "Quase fui longe demais aí! O que você já sabe sobre isso?",
+    "Deixa eu voltar um passo — o que você acha que já entende do assunto?",
+    "Vou com mais calma aqui. Me conta o que você já sabe sobre isso?",
 ]
 
 
-def get_safe_redirect_message() -> str:
-    return random.choice(_SAFE_REDIRECT_MESSAGES)
+def get_safe_redirect_message(student_name: str = "") -> str:
+    msg = random.choice(_SAFE_REDIRECT_MESSAGES)
+    return f"{student_name}, {msg[0].lower()}{msg[1:]}" if student_name else msg
 
 
 # Mantido por compatibilidade — prefira get_safe_redirect_message().

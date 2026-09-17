@@ -304,7 +304,7 @@ async def ask_tutor(
                 f"[TutorGuard] Resposta bloqueada por vazar a alternativa correta — "
                 f"question_id={qq.id} | texto_bloqueado={response_content[:400]!r}"
             )
-            response_content = get_safe_redirect_message()
+            response_content = get_safe_redirect_message(ctx.student_name)
         elif response_looks_like_leaked_reasoning(response_content):
             # Raciocínio interno do modelo vazando em inglês, sem tag
             # nenhuma pra identificar (a limpeza de <think> em
@@ -314,7 +314,7 @@ async def ask_tutor(
                 f"[TutorGuard] Resposta bloqueada por parecer raciocínio interno vazando — "
                 f"question_id={qq.id} | texto_bloqueado={response_content[:400]!r}"
             )
-            response_content = get_safe_redirect_message()
+            response_content = get_safe_redirect_message(ctx.student_name)
 
     else:
         response_content = decision.message_template or "Como posso ajudá-lo com esta questão?"

@@ -229,7 +229,7 @@ async def ask_tutor(
         ctx = TutorContext(
             attempt_id=str(attempt.id),
             quiz_id=str(quiz.id),
-            question_id=str(question.id),
+            question_id=str(qq.id),
             scope=tc.scope.value,
             quiz_title=quiz.title,
             question_statement=q_ctx.get("question_statement", ""),

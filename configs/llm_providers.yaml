@@ -33,7 +33,9 @@ providers:
   # ----------------------------------------------------------
   # GROQ — Melhor opção gratuita: muito rápido, bons modelos
   # Cadastro: https://console.groq.com
-  # Free tier: 14.400 req/dia, 500 req/min
+  # Limites do free tier mudam com frequência — conferir sempre em
+  # https://console.groq.com/docs/rate-limits antes de contar com um
+  # número fixo (não é mais 14.400 req/dia como antigamente).
   # ----------------------------------------------------------
   groq:
     enabled: true                    # Altere para false para desabilitar
@@ -41,10 +43,13 @@ providers:
     base_url: "https://api.groq.com/openai/v1"
     api_key_env: "GROQ_API_KEY"     # Nome da variável de ambiente com a chave
     models:
-      default: "llama-3.1-8b-instant"
+      # llama-3.1-8b-instant e llama-3.3-70b-versatile foram descontinuados
+      # pela Groq (jun/2026) no tier gratuito — migrado para os substitutos
+      # recomendados oficialmente.
+      default: "openai/gpt-oss-20b"
       alternatives:
-        - "llama-3.1-70b-versatile"  # Mais capaz mas mais lento
-        - "mixtral-8x7b-32768"       # Bom para raciocínio
+        - "openai/gpt-oss-120b"      # Mais capaz mas mais lento
+        - "qwen/qwen3.6-27b"         # Alternativa recomendada pela Groq
         - "gemma2-9b-it"             # Google Gemma via Groq
     parameters:
       temperature: 0.3
@@ -59,7 +64,7 @@ providers:
   # ----------------------------------------------------------
   # GOOGLE GEMINI — Generoso no free tier
   # Cadastro: https://aistudio.google.com
-  # Free tier: 15 req/min, 1M tokens/dia
+  # Free tier (2.5 Flash): ~15 req/min, 1.500 req/dia
   # ----------------------------------------------------------
   google_gemini:
     enabled: true
@@ -67,10 +72,10 @@ providers:
     base_url: "https://generativelanguage.googleapis.com"
     api_key_env: "GEMINI_API_KEY"
     models:
-      default: "gemini-1.5-flash"    # Mais rápido e free
+      default: "gemini-2.5-flash"    # Modelo atual — 1.5 foi descontinuado
       alternatives:
-        - "gemini-1.5-pro"           # Mais capaz (free com limites)
-        - "gemini-2.0-flash-exp"     # Experimental mais novo
+        - "gemini-2.5-flash-lite"    # Mais rápido/barato, um pouco menos capaz
+        - "gemini-2.5-pro"           # Mais capaz (free com limites menores)
     parameters:
       temperature: 0.3
       max_tokens: 1024

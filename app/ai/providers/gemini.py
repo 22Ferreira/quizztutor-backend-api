@@ -27,7 +27,7 @@ class GeminiProvider(BaseLLMProvider):
         return os.environ.get(env_var, "")
 
     def _get_model(self) -> str:
-        return self.config.get("models", {}).get("default", "gemini-1.5-flash")
+        return self.config.get("models", {}).get("default", "gemini-2.5-flash")
 
     async def chat(self, messages: list[LLMMessage], **kwargs) -> LLMResponse:
         api_key = self._get_api_key()

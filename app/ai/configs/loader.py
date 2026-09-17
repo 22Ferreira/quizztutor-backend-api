@@ -13,7 +13,13 @@ import yaml
 logger = logging.getLogger(__name__)
 
 # Diretório de configs: pode ser sobrescrito via variável de ambiente
-_CONFIGS_DIR = Path(os.environ.get("AI_CONFIGS_DIR", str(Path(__file__).parent.parent.parent.parent.parent / "configs")))
+# (produção usa AI_CONFIGS_DIR=/app/configs, definido no Dockerfile).
+# Sem a variável, resolve pra <repo>/configs a partir deste arquivo
+# (app/ai/configs/loader.py -> app/ai -> app -> repo), 4 níveis acima —
+# um "parent" a mais aqui apontava pro diretório ACIMA do repo, fazendo
+# get_tutor_prompts()/get_decision_tree() voltarem {} silenciosamente
+# (só um log de aviso) em qualquer execução local fora do Docker.
+_CONFIGS_DIR = Path(os.environ.get("AI_CONFIGS_DIR", str(Path(__file__).parent.parent.parent.parent / "configs")))
 
 _cache: dict[str, Any] = {}
 def _configs_dir() -> Path:

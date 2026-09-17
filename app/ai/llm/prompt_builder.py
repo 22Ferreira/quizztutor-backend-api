@@ -80,9 +80,9 @@ def build_tutor_messages(
     # pergunta socrática em loop, e escalar o nível de ajuda se o aluno
     # já insistiu várias vezes sem conseguir.
     history_messages = [
-        LLMMessage(role="assistant" if h.get("role") == "assistant" else "user", content=h.get("content", ""))
+        LLMMessage(role="assistant" if h.get("role") == "assistant" else "user", content=h.get("content", "").strip())
         for h in (history or [])
-        if h.get("content")
+        if h.get("content", "").strip()  # "  " é truthy em Python — sem .strip() aqui, passava direto
     ]
 
     return [

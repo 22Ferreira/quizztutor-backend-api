@@ -33,24 +33,34 @@ def _normalize(text: str) -> str:
     return text
 
 
-# Texto curto demais (ex: "A", "Sim") geraria falso positivo praticamente
-# certo — comparação só é confiável a partir de um tamanho mínimo.
+# Trecho/palavra curto demais (ex: "A", "e") geraria falso positivo
+# praticamente certo — comparação de FRASES só é confiável a partir
+# deste tamanho. Uma única PALAVRA (sigla técnica: "OSPF", "TCP", "RIP")
+# pode ser bem mais curta que isso com segurança, ver _MIN_LEN_SINGLE_WORD.
 _MIN_LEN_FOR_MATCH = 6
+# Palavra única mínima (siglas técnicas costumam ter 3 letras: TCP, RIP,
+# ARP, DNS) — combinada com fronteira de palavra (\b) e a exclusão de
+# palavras comuns abaixo, o risco de falso positivo continua baixo.
+_MIN_LEN_SINGLE_WORD = 3
 # Trecho contíguo mínimo de palavras da alternativa pra considerar vazamento
 # real (1-2 palavras soltas geram falso positivo fácil demais).
 _MIN_NGRAM_WORDS = 3
 
-# Palavras de função em português — um trecho composto majoritariamente
-# por elas (ex: "a camada de") é genérico demais pra indicar vazamento,
-# mesmo tendo 3+ palavras. Só conta como vazamento real se o trecho tiver
-# mais palavras de CONTEÚDO do que de função.
+# Palavras de função/resposta genérica em português — um trecho composto
+# majoritariamente por elas (ex: "a camada de") é genérico demais pra
+# indicar vazamento, mesmo tendo 3+ palavras. Inclui também respostas
+# binárias comuns (sim/não/certo/errado) que apareceriam em qualquer
+# conversa normal e não indicam vazamento por si só — questões de
+# Verdadeiro/Falso não são protegidas por este filtro (limitação
+# conhecida, documentada no topo do arquivo).
 _PT_STOPWORDS = {
     "a", "o", "as", "os", "de", "do", "da", "dos", "das", "em", "no", "na",
     "nos", "nas", "um", "uma", "uns", "umas", "e", "ou", "que", "com",
-    "para", "por", "se", "e", "ao", "aos", "a", "as", "mais", "muito",
+    "para", "por", "se", "ao", "aos", "mais", "muito",
     "como", "mas", "tambem", "ja", "seu", "sua", "seus", "suas", "este",
     "esta", "isso", "isto", "ele", "ela", "eles", "elas", "entre", "sobre",
-    "sem", "sao", "ser", "esta", "estao", "foi", "eh", "nao", "sim",
+    "sem", "sao", "ser", "estao", "foi", "eh", "nao", "sim",
+    "certo", "errado", "verdadeiro", "falso",
 }
 
 
@@ -59,19 +69,30 @@ def _is_meaningful_ngram(words: list[str]) -> bool:
     return len(content_words) >= max(2, (len(words) // 2) + 1)
 
 
+def _word_boundary_match(phrase: str, text: str) -> bool:
+    # \b em vez de "in" puro: evita "sim" batendo dentro de "simulação",
+    # por exemplo — importante agora que o piso de tamanho caiu pra 3.
+    return re.search(rf"\b{re.escape(phrase)}\b", text) is not None
+
+
 def _contains_ngram_leak(response_norm: str, option_norm: str) -> bool:
     words = option_norm.split()
+    if len(words) == 1:
+        word = words[0]
+        if word in _PT_STOPWORDS or len(word) < _MIN_LEN_SINGLE_WORD:
+            return False
+        return _word_boundary_match(word, response_norm)
     if len(words) < _MIN_NGRAM_WORDS:
-        # Alternativa já é curta (poucas palavras) — só vale comparar o
-        # texto inteiro dela, não dá pra fatiar mais que isso.
-        return len(option_norm) >= _MIN_LEN_FOR_MATCH and option_norm in response_norm
+        # Alternativa curta (2 palavras) — só vale comparar o texto
+        # inteiro dela, não dá pra fatiar em trechos menores que isso.
+        return len(option_norm) >= _MIN_LEN_FOR_MATCH and _word_boundary_match(option_norm, response_norm)
     for n in range(len(words), _MIN_NGRAM_WORDS - 1, -1):
         for i in range(len(words) - n + 1):
             phrase_words = words[i:i + n]
             if not _is_meaningful_ngram(phrase_words):
                 continue
             phrase = " ".join(phrase_words)
-            if len(phrase) >= _MIN_LEN_FOR_MATCH and phrase in response_norm:
+            if len(phrase) >= _MIN_LEN_FOR_MATCH and _word_boundary_match(phrase, response_norm):
                 return True
     return False
 

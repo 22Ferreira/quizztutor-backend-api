@@ -16,8 +16,27 @@ class Settings(BaseSettings):
         import os
         # Em produção, exige chave forte
         env = os.environ.get("ENV", "dev")
-        if env == "prod" and (not v or v == "change-me" or len(v) < 32):
-            raise ValueError("SECRET_KEY forte obrigatória em produção (mínimo 32 chars)")
+        if env == "prod":
+            if not v or len(v) < 32:
+                raise ValueError("SECRET_KEY forte obrigatória em produção (mínimo 32 chars)")
+            # Achado em auditoria de segurança: a checagem antiga só
+            # rejeitava a string exata "change-me" — o placeholder real
+            # do .env.prod ("TROQUE_POR_CHAVE_FORTE_DE_64_CHARS") tem
+            # 34 caracteres, passava batido pela checagem de tamanho.
+            # Se alguém publicar sem trocar esse valor, os tokens JWT
+            # ficam assinados com uma chave visível no próprio repositório.
+            _placeholder_markers = (
+                "change-me", "changeme", "troque", "sua_chave", "your_key",
+                "your-key", "placeholder", "example", "chave_forte",
+                "secret_key_aqui", "xxxxxxxx",
+            )
+            lowered = v.lower()
+            if any(marker in lowered for marker in _placeholder_markers):
+                raise ValueError(
+                    "SECRET_KEY parece um valor de exemplo/placeholder, não uma chave "
+                    "real gerada — troque por um valor aleatório de verdade "
+                    "(ex: openssl rand -hex 32) antes de rodar em produção."
+                )
         return v
 
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60

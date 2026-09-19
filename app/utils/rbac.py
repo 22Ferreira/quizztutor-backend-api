@@ -28,10 +28,14 @@ def invalidate_user_cache(user_id: str) -> None:
         _user_cache.pop(k, None)
 
 
-async def get_optional_user(
-    token: str | None = Depends(oauth2_optional),
-    db: AsyncSession = Depends(get_db),
-) -> User | None:
+async def resolve_user_from_token_string(token: str | None, db: AsyncSession) -> User | None:
+    """Mesma validação de get_optional_user (decodifica, confere tipo,
+    usuário ativo, token_version), mas recebe o token como string direto
+    em vez de vir de um header Authorization via Depends() — WebSocket
+    não manda header como requisição HTTP normal, então as rotas de
+    WebSocket (ws_professor/ws_student em live.py) precisam chamar isso
+    com o token que vier por query string, pra validar de verdade em
+    vez de confiar cegamente no que o cliente diz que é."""
     if not token:
         return None
     try:
@@ -57,6 +61,13 @@ async def get_optional_user(
 
     _user_cache[cache_key] = user
     return user
+
+
+async def get_optional_user(
+    token: str | None = Depends(oauth2_optional),
+    db: AsyncSession = Depends(get_db),
+) -> User | None:
+    return await resolve_user_from_token_string(token, db)
 
 
 async def get_current_user(

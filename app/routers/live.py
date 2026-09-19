@@ -48,7 +48,7 @@ from app.models.live_session import (
 )
 from app.models.quiz import Quiz, QuizQuestion, QuizOption, QuizStatus
 from app.models.classroom import ClassEnrollment
-from app.utils.rbac import get_current_user, require_roles
+from app.utils.rbac import get_current_user, require_roles, resolve_user_from_token_string
 from app.schemas.live_schemas import (
     LiveSessionCreate, LiveSessionOut, ParticipantOut,
     LiveQuestionOut, LiveAnswerIn, LiveAnswerOut,
@@ -1383,8 +1383,33 @@ async def get_student_result(
 # ══════════════════════════════════════════════════════════════════════════════
 
 @router.websocket("/sessions/{session_id}/ws/professor")
-async def ws_professor(session_id: uuid.UUID, websocket: WebSocket, token: str = ""):
-    """WebSocket para professor receber updates em tempo real."""
+async def ws_professor(
+    session_id: uuid.UUID,
+    websocket: WebSocket,
+    token: str = "",
+    db: AsyncSession = Depends(get_db),
+):
+    """WebSocket para professor receber updates em tempo real.
+
+    O parâmetro "token" existia na assinatura mas nunca era validado —
+    qualquer um que soubesse o session_id (um UUID) conseguia conectar
+    aqui sem credencial nenhuma e ver em tempo real a pontuação e as
+    respostas de todos os alunos da sessão (achado em auditoria de
+    segurança). Agora decodifica o token de verdade e confere que é um
+    professor (ou admin) dono desta sessão especificamente.
+    """
+    # Validação ANTES de aceitar a conexão — padrão recomendado do
+    # FastAPI pra rejeitar WebSocket sem credencial válida.
+    user = await resolve_user_from_token_string(token, db)
+    if not user or user.role.value not in ("PROFESSOR", "ADMIN"):
+        await websocket.close(code=4401)
+        return
+    sess_q = await db.execute(select(LiveSession).where(LiveSession.id == session_id))
+    session = sess_q.scalar_one_or_none()
+    if not session or (user.role.value != "ADMIN" and session.created_by != user.id):
+        await websocket.close(code=4403)
+        return
+
     await manager.connect_prof(str(session_id), websocket)
     try:
         while True:
@@ -1395,8 +1420,31 @@ async def ws_professor(session_id: uuid.UUID, websocket: WebSocket, token: str =
 
 
 @router.websocket("/sessions/{session_id}/ws/student")
-async def ws_student(session_id: uuid.UUID, websocket: WebSocket, user_id: str = ""):
-    """WebSocket para aluno receber eventos (aprovação, start, end, etc.)."""
+async def ws_student(
+    session_id: uuid.UUID,
+    websocket: WebSocket,
+    user_id: str = "",
+    token: str = "",
+    db: AsyncSession = Depends(get_db),
+):
+    """WebSocket para aluno receber eventos (aprovação, start, end, etc.).
+
+    Antes, "user_id" vinha direto do cliente sem nenhuma verificação —
+    qualquer um que soubesse o user_id de outro aluno conseguia se
+    conectar se passando por ele, roubando a conexão dele (achado em
+    auditoria de segurança). O frontend já manda "token" nessa mesma
+    URL desde sempre (LiveWaiting.tsx/LivePlay.tsx), só que o backend
+    nunca declarava esse parâmetro nem conferia — agora decodifica o
+    token de verdade e usa o ID de dentro dele, ignorando o que o
+    cliente alegou ser caso não bata.
+    """
+    # Validação ANTES de aceitar a conexão — padrão recomendado do
+    # FastAPI pra rejeitar WebSocket sem credencial válida.
+    user = await resolve_user_from_token_string(token, db)
+    if not user or str(user.id) != user_id:
+        await websocket.close(code=4401)
+        return
+
     await manager.connect_student(str(session_id), user_id, websocket)
     try:
         while True:

@@ -48,7 +48,10 @@ async def login(payload: LoginRequest, request: Request, db: AsyncSession = Depe
 
 
 @router.post("/register", response_model=TokenResponse)
-async def register(payload: RegisterRequest, db: AsyncSession = Depends(get_db)):
+async def register(payload: RegisterRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    ip = get_real_ip(request)
+    if not await rate_limiter.hit(ip, "register", settings.RL_REGISTER_PER_MIN):
+        raise HTTPException(status_code=429, detail="Too many requests")
     q = await db.execute(select(User).where(User.email == payload.email))
     if q.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email já cadastrado")
@@ -81,6 +84,8 @@ async def refresh(payload: RefreshRequest, db: AsyncSession = Depends(get_db)):
 @router.post("/request-password-reset")
 async def request_password_reset(payload: RequestPasswordReset, request: Request, db: AsyncSession = Depends(get_db)):
     ip = get_real_ip(request)
+    if not await rate_limiter.hit(ip, "password_reset", settings.RL_PASSWORD_RESET_PER_MIN):
+        raise HTTPException(status_code=429, detail="Too many requests")
     q = await db.execute(select(User).where(User.email == payload.email))
     user = q.scalar_one_or_none()
     if user and user.active:
@@ -98,6 +103,8 @@ async def request_password_reset(payload: RequestPasswordReset, request: Request
 @router.post("/reset-password")
 async def reset_password(payload: ResetPasswordRequest, request: Request, db: AsyncSession = Depends(get_db)):
     ip = get_real_ip(request)
+    if not await rate_limiter.hit(ip, "password_reset", settings.RL_PASSWORD_RESET_PER_MIN):
+        raise HTTPException(status_code=429, detail="Too many requests")
     token_hash = hashlib.sha256(payload.token.encode("utf-8")).hexdigest()
     q = await db.execute(select(PasswordResetToken).where(PasswordResetToken.token_hash == token_hash))
     pr = q.scalar_one_or_none()

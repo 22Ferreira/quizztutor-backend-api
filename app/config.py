@@ -75,6 +75,12 @@ class Settings(BaseSettings):
     RL_LOGIN_PER_MIN: int = 10
     RL_TUTOR_PER_MIN: int = 20
     RL_ATTEMPT_START_PER_MIN: int = 10
+    # Achado em auditoria de segurança: /auth/register e as duas rotas de
+    # redefinição de senha não tinham limite nenhum — dava pra criar
+    # contas em massa via script, ou "bombardear" o e-mail de alguém com
+    # links de redefinição repetidos.
+    RL_REGISTER_PER_MIN: int = 5
+    RL_PASSWORD_RESET_PER_MIN: int = 5
 
     # Redis (opcional — se vazio, usa rate limit em memória)
     REDIS_URL: str = ""

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Query, Backgroun
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.db.session import get_db
-from app.utils.rbac import get_current_user, get_optional_user
+from app.utils.rbac import get_current_user, get_optional_user, ensure_attempt_owner
 from app.utils.rate_limit import rate_limiter
 from app.config import settings
 from app.models import User
@@ -206,6 +206,7 @@ async def current_question(
     attempt = att_q.scalar_one_or_none()
     if not attempt:
         raise HTTPException(status_code=404, detail="Tentativa não encontrada")
+    ensure_attempt_owner(attempt, me)
     ensure_attempt_active(attempt)
 
     order = attempt.question_order_json
@@ -368,6 +369,7 @@ async def start_question_timer(
     attempt = att_q.scalar_one_or_none()
     if not attempt:
         raise HTTPException(status_code=404, detail="Tentativa não encontrada")
+    ensure_attempt_owner(attempt, me)
     ensure_attempt_active(attempt)
 
     state_q = await db.execute(
@@ -412,6 +414,7 @@ async def submit_answer(
     attempt = att_q.scalar_one_or_none()
     if not attempt:
         raise HTTPException(status_code=404, detail="Tentativa não encontrada")
+    ensure_attempt_owner(attempt, me)
     ensure_attempt_active(attempt)
 
     # Check question is in this attempt
@@ -533,6 +536,7 @@ async def use_hint(
     attempt = att_q.scalar_one_or_none()
     if not attempt:
         raise HTTPException(status_code=404, detail="Tentativa não encontrada")
+    ensure_attempt_owner(attempt, me)
     ensure_attempt_active(attempt)
 
     qq_q = await db.execute(select(QuizQuestion).where(QuizQuestion.id == question_id))
@@ -584,6 +588,7 @@ async def pause_extend(
     attempt = att_q.scalar_one_or_none()
     if not attempt:
         raise HTTPException(status_code=404, detail="Tentativa não encontrada")
+    ensure_attempt_owner(attempt, me)
     ensure_attempt_active(attempt)
 
     state_q = await db.execute(
@@ -612,6 +617,7 @@ async def submit_attempt(
     attempt = att_q.scalar_one_or_none()
     if not attempt:
         raise HTTPException(status_code=404, detail="Tentativa não encontrada")
+    ensure_attempt_owner(attempt, me)
     if attempt.status not in (AttemptStatus.IN_PROGRESS,):
         raise HTTPException(status_code=400, detail="Tentativa já finalizada")
 
@@ -778,6 +784,7 @@ async def get_attempt(
     attempt = att_q.scalar_one_or_none()
     if not attempt:
         raise HTTPException(status_code=404, detail="Tentativa não encontrada")
+    ensure_attempt_owner(attempt, me)
     return AttemptOut(
         id=attempt.id,
         quiz_id=attempt.quiz_id,

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.db.session import get_db
-from app.utils.rbac import get_current_user, get_optional_user
+from app.utils.rbac import get_current_user, get_optional_user, ensure_attempt_owner
 from app.models import User
 from app.models.attempt import Attempt
 from app.models.chat import ChatThread, ChatMessage
@@ -22,6 +22,7 @@ async def create_or_get_thread(
     attempt = att_q.scalar_one_or_none()
     if not attempt:
         raise HTTPException(status_code=404, detail="Tentativa não encontrada")
+    ensure_attempt_owner(attempt, me)
 
     # Check if thread already exists
     existing_q = await db.execute(select(ChatThread).where(ChatThread.attempt_id == attempt.id))
@@ -48,6 +49,8 @@ async def list_messages(
     thread = thread_q.scalar_one_or_none()
     if not thread:
         raise HTTPException(status_code=404, detail="Thread não encontrada")
+    att_q = await db.execute(select(Attempt).where(Attempt.id == thread.attempt_id))
+    ensure_attempt_owner(att_q.scalar_one_or_none(), me)
 
     stmt = (
         select(ChatMessage)
@@ -92,6 +95,8 @@ async def send_message(
     thread = thread_q.scalar_one_or_none()
     if not thread:
         raise HTTPException(status_code=404, detail="Thread não encontrada")
+    att_q = await db.execute(select(Attempt).where(Attempt.id == thread.attempt_id))
+    ensure_attempt_owner(att_q.scalar_one_or_none(), me)
 
     msg = ChatMessage(
         thread_id=thread.id,

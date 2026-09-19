@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from app.db.session import get_db
-from app.utils.rbac import get_current_user, get_optional_user
+from app.utils.rbac import get_current_user, get_optional_user, ensure_attempt_owner
 from app.utils.rate_limit import rate_limiter
 from app.config import settings
 from app.models import User
@@ -118,6 +118,7 @@ async def ask_tutor(
     attempt = att_q.scalar_one_or_none()
     if not attempt:
         raise HTTPException(status_code=404, detail="Tentativa não encontrada")
+    ensure_attempt_owner(attempt, me)
     if attempt.status != AttemptStatus.IN_PROGRESS:
         raise HTTPException(status_code=400, detail="Tentativa não está em andamento")
 

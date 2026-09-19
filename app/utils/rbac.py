@@ -94,3 +94,27 @@ def require_roles(*roles: str):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
         return user
     return _dep
+
+
+def ensure_attempt_owner(attempt, me: User | None) -> None:
+    """Bloqueia acesso a uma tentativa (attempt) de OUTRO usuário logado.
+
+    Rotas de ação em attempts.py/tutor.py/chat.py carregavam a Attempt só
+    pelo ID da URL, sem checar se ela pertence a quem está chamando —
+    qualquer um que soubesse/adivinhasse um attempt_id podia ver a
+    questão atual, responder, gastar dica ou conversar no chat de outra
+    pessoa (achado em auditoria de segurança).
+
+    Tentativa de CONVIDADO (participant_user_id None, fluxo de link
+    público/e-mail sem login) não tem dono pra checar — o próprio ID já
+    funciona como credencial nesse caso, do jeito que sempre funcionou.
+    Só bloqueia quando a tentativa pertence a um usuário logado de
+    verdade e quem está chamando não é esse mesmo usuário.
+    """
+    if attempt is None:
+        # attempt_id apontava pra algo que não existe mais (ex: thread
+        # órfã) — trata igual "não encontrada", não deixa passar batido.
+        raise HTTPException(status_code=404, detail="Tentativa não encontrada")
+    if attempt.participant_user_id is not None:
+        if not me or me.id != attempt.participant_user_id:
+            raise HTTPException(status_code=403, detail="Você não tem acesso a esta tentativa")

@@ -10,6 +10,13 @@ email-validator>=2.1
 
 # Banco de dados
 SQLAlchemy>=2.0
+# greenlet: o modo assíncrono do SQLAlchemy (create_async_engine etc.)
+# exige esse pacote em runtime, mas ele nunca foi listado como
+# dependência direta aqui — sempre veio "de brinde" via resolução
+# transitiva de outro pacote. Um build novo resolveu as dependências
+# de um jeito que não trouxe o greenlet junto, e o backend caiu em
+# loop de reinício com ModuleNotFoundError logo na inicialização.
+greenlet>=3.0
 asyncpg>=0.29
 alembic>=1.13
 

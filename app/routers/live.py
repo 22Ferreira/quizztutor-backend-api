@@ -313,6 +313,44 @@ async def _build_question_stats(session_id: uuid.UUID, db: AsyncSession, sess=No
             wrong_users=s["wrong_users"],
         ))
 
+    # Questões que ainda não tiveram NENHUMA resposta ficavam de fora da
+    # lista inteira (o loop acima só cria uma entrada em "stats" quando
+    # existe pelo menos uma LiveAnswer) — não apareciam nem com
+    # total_answers=0, simplesmente não existiam no resultado. Isso fazia
+    # o filtro "Sem resposta" do painel do professor nunca achar nada,
+    # mesmo quando uma questão de verdade não tinha sido respondida.
+    answered_qids = {str(qid) for qid in stats.keys()}
+    for idx, qid_str in enumerate(question_order):
+        if qid_str in answered_qids:
+            continue
+        try:
+            qid_uuid = uuid.UUID(qid_str)
+        except ValueError:
+            continue
+        q_r = await db.execute(select(QuizQuestion).where(QuizQuestion.id == qid_uuid))
+        q = q_r.scalar_one_or_none()
+        if not q:
+            continue
+        difficulty = None
+        if sess and sess.time_by_difficulty:
+            difficulty = (sess.time_by_difficulty.get("overrides") or {}).get(qid_str)
+            if not difficulty:
+                difficulty = q.difficulty
+        result.append(QuestionStatsOut(
+            question_id=qid_uuid,
+            statement_preview=(q.statement[:80] + "...") if len(q.statement) > 80 else q.statement,
+            total_answers=0,
+            correct_count=0,
+            wrong_count=0,
+            accuracy_pct=0.0,
+            avg_time_ms=0.0,
+            most_chosen_option_id=None,
+            question_index=idx + 1,
+            difficulty=difficulty,
+            correct_users=[],
+            wrong_users=[],
+        ))
+
     # Ordena pelo índice original da questão no quiz
     result.sort(key=lambda x: x.question_index or 999)
     return result

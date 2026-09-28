@@ -150,6 +150,10 @@ class QuestionStatsOut(BaseModel):
     total_answers: int
     correct_count: int
     wrong_count: int
+    # Tempo esgotado sem o aluno responder — antes contava junto com
+    # wrong_count (parecia que ele "errou", quando na verdade não deu
+    # tempo). Agora é uma categoria própria, separada de erro de verdade.
+    no_answer_count: int = 0
     accuracy_pct: float
     avg_time_ms: float
     most_chosen_option_id: Optional[uuid.UUID]
@@ -157,6 +161,7 @@ class QuestionStatsOut(BaseModel):
     difficulty: Optional[str] = None
     correct_users: List[QuestionUserEntry] = []
     wrong_users: List[QuestionUserEntry] = []
+    no_answer_users: List[QuestionUserEntry] = []
 
 class ProgressDistributionOut(BaseModel):
     """Quantos alunos estão em cada questão"""

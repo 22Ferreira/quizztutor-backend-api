@@ -243,8 +243,8 @@ async def _build_question_stats(session_id: uuid.UUID, db: AsyncSession, sess=No
     for ans, att_uid in rows:
         qid = ans.question_id
         if qid not in stats:
-            stats[qid] = {"total": 0, "correct": 0, "times": [], "options": {},
-                          "correct_users": [], "wrong_users": []}
+            stats[qid] = {"total": 0, "correct": 0, "no_answer": 0, "times": [], "options": {},
+                          "correct_users": [], "wrong_users": [], "no_answer_users": []}
         stats[qid]["total"] += 1
         if ans.is_correct:
             stats[qid]["correct"] += 1
@@ -253,18 +253,23 @@ async def _build_question_stats(session_id: uuid.UUID, db: AsyncSession, sess=No
                     "user_id": str(att_uid),
                     "name": uid_to_name.get(att_uid, "?"),
                 })
+        elif ans.reason == LiveAnswerReason.TIMEOUT:
+            # Tempo esgotado sem o aluno escolher nada — não é a mesma
+            # coisa que responder errado, não pode contar como "erro"
+            # (pedido explícito: turma online precisa distinguir os dois).
+            stats[qid]["no_answer"] += 1
+            if att_uid:
+                stats[qid]["no_answer_users"].append({
+                    "user_id": str(att_uid),
+                    "name": uid_to_name.get(att_uid, "?"),
+                    "timeout": True,
+                })
         else:
-            if att_uid and ans.reason != LiveAnswerReason.TIMEOUT:
+            if att_uid:
                 stats[qid]["wrong_users"].append({
                     "user_id": str(att_uid),
                     "name": uid_to_name.get(att_uid, "?"),
                     "timeout": False,
-                })
-            elif att_uid:
-                stats[qid]["wrong_users"].append({
-                    "user_id": str(att_uid),
-                    "name": uid_to_name.get(att_uid, "?"),
-                    "timeout": True,
                 })
         stats[qid]["times"].append(ans.response_time_ms)
         if ans.selected_option_id:
@@ -303,7 +308,8 @@ async def _build_question_stats(session_id: uuid.UUID, db: AsyncSession, sess=No
             statement_preview=(q.statement[:80] + "...") if q and len(q.statement) > 80 else (q.statement if q else ""),
             total_answers=s["total"],
             correct_count=s["correct"],
-            wrong_count=s["total"] - s["correct"],
+            wrong_count=s["total"] - s["correct"] - s["no_answer"],
+            no_answer_count=s["no_answer"],
             accuracy_pct=round(s["correct"] / s["total"] * 100, 1) if s["total"] > 0 else 0.0,
             avg_time_ms=round(avg_ms, 1),
             most_chosen_option_id=uuid.UUID(most_chosen) if most_chosen else None,
@@ -311,6 +317,7 @@ async def _build_question_stats(session_id: uuid.UUID, db: AsyncSession, sess=No
             difficulty=difficulty,
             correct_users=s["correct_users"],
             wrong_users=s["wrong_users"],
+            no_answer_users=s["no_answer_users"],
         ))
 
     # Questões que ainda não tiveram NENHUMA resposta ficavam de fora da
